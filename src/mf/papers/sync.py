@@ -420,7 +420,6 @@ def _process_single_paper_with_timeout(
                 sys.executable, "-c",
                 f"""
 import sys
-sys.path.insert(0, '/home/spinoza/github/repos/metafunctor/scripts/mf/src')
 from mf.papers.processor import process_paper
 success = process_paper(
     '{source_path}',
