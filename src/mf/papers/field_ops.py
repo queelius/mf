@@ -39,6 +39,7 @@ if TYPE_CHECKING:
 PAPERS_SCHEMA: dict[str, FieldDef] = {
     # Core metadata
     "title": FieldDef(FieldType.STRING, "Paper title"),
+    "subtitle": FieldDef(FieldType.STRING, "Paper subtitle"),
     "date": FieldDef(FieldType.STRING, "Publication date (YYYY-MM-DD)"),
     "abstract": FieldDef(FieldType.STRING, "Paper abstract"),
     "year": FieldDef(FieldType.INT, "Publication year", min_val=1970, max_val=2100),
@@ -47,6 +48,7 @@ PAPERS_SCHEMA: dict[str, FieldDef] = {
     "advisors": FieldDef(FieldType.STRING_LIST, "Thesis advisors"),
     # Classification
     "tags": FieldDef(FieldType.STRING_LIST, "Paper tags"),
+    "genres": FieldDef(FieldType.STRING_LIST, "Genre taxonomy (paper, novel, essay, slides)"),
     "category": FieldDef(FieldType.STRING, "Paper category"),
     "stars": FieldDef(FieldType.INT, "Quality/featured rating (0-5)", min_val=0, max_val=5),
     "featured": FieldDef(FieldType.BOOL, "Show in featured section"),
@@ -57,6 +59,7 @@ PAPERS_SCHEMA: dict[str, FieldDef] = {
         choices=["published", "preprint", "draft", "submitted"],
     ),
     "venue": FieldDef(FieldType.STRING, "Conference or journal name"),
+    "publisher": FieldDef(FieldType.STRING, "Publisher name"),
     "publication_type": FieldDef(
         FieldType.STRING,
         "Publication type",

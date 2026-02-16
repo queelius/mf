@@ -12,7 +12,7 @@ PAPER_TEMPLATE = '''---
 title: "{title}"
 slug: "{slug}"
 {aliases}{draft}date: {date}
-{authors}{abstract}{keywords}{category}{stars}{venue}{status}{featured}{arxiv_id}{doi}{github_url}{project_url}{external_url}{image}pdf_file: "{pdf_file}"
+{authors}{abstract}{keywords}{genres}{category}{stars}{venue}{status}{featured}{arxiv_id}{doi}{github_url}{project_url}{external_url}{image}pdf_file: "{pdf_file}"
 pdf_size: "{pdf_size}"
 page_count: {page_count}
 pdf_only: false
@@ -133,7 +133,7 @@ PDF_ONLY_TEMPLATE = '''---
 title: "{title}"
 slug: "{slug}"
 {aliases}{draft}date: {date}
-{authors}{abstract}{keywords}{category}{stars}{venue}{status}{featured}{arxiv_id}{doi}{github_url}{project_url}{external_url}{image}pdf_file: "{pdf_file}"
+{authors}{abstract}{keywords}{genres}{category}{stars}{venue}{status}{featured}{arxiv_id}{doi}{github_url}{project_url}{external_url}{image}pdf_file: "{pdf_file}"
 pdf_size: "{pdf_size}"
 page_count: {page_count}
 pdf_only: true
@@ -272,6 +272,12 @@ def render_paper_frontmatter(
     if keywords:
         keywords_str = "tags:\n" + "\n".join(f'  - "{k}"' for k in keywords) + "\n"
 
+    # Format genres taxonomy
+    genres = metadata.get("genres", [])
+    genres_str = ""
+    if genres:
+        genres_str = "genres:\n" + "\n".join(f'  - "{g}"' for g in genres) + "\n"
+
     # Optional fields
     category = metadata.get("category", "")
     category_str = f'category: "{category}"\n' if category else ""
@@ -334,6 +340,7 @@ def render_paper_frontmatter(
         "authors": authors_str,
         "abstract": abstract_str,
         "keywords": keywords_str,
+        "genres": genres_str,
         "category": category_str,
         "stars": stars_str,
         "venue": venue_str,

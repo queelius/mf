@@ -158,6 +158,22 @@ def generate_project_frontmatter(
     lines.append(f"featured: {str(metadata.get('featured', False)).lower()}")
     lines.append("categories: []")
 
+    # Top-level fields used by list layout for filtering/sorting
+    if primary_language and primary_language != "Unknown":
+        lines.append(f'primary_language: "{primary_language}"')
+    github_stars = github_data.get("stargazers_count", 0)
+    lines.append(f"github_stars: {github_stars}")
+    license_info = metadata.get("license") or github_data.get("license")
+    if isinstance(license_info, dict):
+        license_id = license_info.get("spdx_id", "")
+    else:
+        license_id = str(license_info) if license_info else ""
+    if license_id and license_id != "NOASSERTION":
+        lines.append(f'license: "{license_id}"')
+    demo_url = metadata.get("demo_url", "")
+    if demo_url:
+        lines.append(f'demo_url: "{demo_url}"')
+
     # Aliases for Hugo redirects
     aliases = metadata.get("aliases", [])
     if aliases:

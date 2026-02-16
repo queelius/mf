@@ -533,22 +533,22 @@ If rebuilding metafunctor.com or adapting `mf` for a new site:
 
 ## Gaps Between mf and Theme
 
-Fields the theme reads but `mf` does not currently generate:
+Fields the theme reads but `mf` does not generate. Most gaps were closed — only writing-specific fields remain since `mf` does not manage the writing section.
 
 | Field | Section | Theme reads | `mf` generates? |
 |-------|---------|-------------|-----------------|
-| `SubTitle` | publications | Single layout | No |
-| `publisher` | publications | Single layout | No |
-| `publication.arxiv` | publications | List layout | No (uses `arxiv_id` at top level) |
-| `github_stars` | projects | List layout sort | No (uses `metrics.stars`) |
-| `demo_url` | projects | List layout action button | No |
-| `license` | projects | List layout badge | No |
-| `primary_language` | projects | List layout filter | Generated in DB, not in front matter |
 | `writing_type` | writing | List layout separation | Not mf-managed |
 | `sidebar_related` | writing | Single layout sidebar | Not mf-managed |
-| `genre` / `genres` | papers | Taxonomy | Not generated |
 
-These represent either future `mf` enhancements or fields that are manually maintained.
+Previously closed gaps (now generated):
+- `SubTitle` — publications, from paper `subtitle` field
+- `publisher` — publications, from paper `publisher` field
+- `publication.arxiv` — publications, mapped from paper `arxiv_id`
+- `github_stars` — projects, from GitHub API `stargazers_count`
+- `demo_url` — projects, from manual override
+- `license` — projects, from GitHub API `license.spdx_id` or manual override
+- `primary_language` — projects, now emitted to front matter
+- `genres` — papers, from paper `genres` list field
 
 ## Future Configurability
 

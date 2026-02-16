@@ -51,6 +51,10 @@ def map_paper_to_publication(entry: PaperEntry) -> dict[str, Any]:
     # Required fields
     fm["title"] = data.get("title", entry.slug)
 
+    # Subtitle
+    if data.get("subtitle"):
+        fm["SubTitle"] = data["subtitle"]
+
     # Abstract
     if data.get("abstract"):
         fm["abstract"] = data["abstract"]
@@ -70,6 +74,10 @@ def map_paper_to_publication(entry: PaperEntry) -> dict[str, Any]:
     if data.get("date"):
         fm["date"] = f"{data['date']}T00:00:00Z"
 
+    # Publisher
+    if data.get("publisher"):
+        fm["publisher"] = data["publisher"]
+
     # Publication metadata
     pub_meta: dict[str, Any] = {}
     if data.get("category"):
@@ -80,6 +88,8 @@ def map_paper_to_publication(entry: PaperEntry) -> dict[str, Any]:
         pub_meta["status"] = data["status"]
     if data.get("doi"):
         pub_meta["doi"] = data["doi"]
+    if data.get("arxiv_id"):
+        pub_meta["arxiv"] = data["arxiv_id"]
     if data.get("year"):
         pub_meta["year"] = data["year"]
     if pub_meta:
@@ -300,6 +310,8 @@ def _update_publication_file(pub_path: Path, entry: PaperEntry) -> None:
 
     if data.get("doi"):
         existing_fm["publication"]["doi"] = data["doi"]
+    if data.get("arxiv_id"):
+        existing_fm["publication"]["arxiv"] = data["arxiv_id"]
     if data.get("status"):
         existing_fm["publication"]["status"] = data["status"]
     if data.get("venue"):

@@ -83,6 +83,8 @@ FIELD_SCHEMA: dict[str, FieldDef] = {
     "sources": FieldDef(FieldType.DICT, "Source URLs (github, documentation)"),
     "metrics": FieldDef(FieldType.DICT, "Project metrics (stars, downloads, citations)"),
     # Strings
+    "primary_language": FieldDef(FieldType.STRING, "Primary programming language"),
+    "demo_url": FieldDef(FieldType.STRING, "Demo or live site URL"),
     "github": FieldDef(FieldType.STRING, "GitHub repository URL"),
     "year_started": FieldDef(FieldType.INT, "Year project started", min_val=1970, max_val=2100),
     "status": FieldDef(
