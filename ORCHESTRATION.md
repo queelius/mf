@@ -253,14 +253,17 @@ content/post/*/index.md → crier publish → dev.to, Hashnode, Bluesky, etc.
 
 ## Database Locations
 
+All `mf` data lives in the `.mf/` directory at the Hugo site root (not in the `mf` repo itself):
+
 | Database | Purpose | Tool |
 |----------|---------|------|
-| `scripts/paper_db.json` | Paper metadata + source tracking | mf |
-| `scripts/projects_db.json` | Project manual overrides | mf |
-| `scripts/projects_cache.json` | GitHub API cache | mf |
-| `scripts/mf/config.json` | mf settings (backup retention, etc.) | mf |
-| `scripts/backups/` | Paper database backups | mf |
-| `scripts/projects_backup/` | Projects database backups | mf |
+| `<site>/.mf/paper_db.json` | Paper metadata + source tracking | mf |
+| `<site>/.mf/projects_db.json` | Project manual overrides | mf |
+| `<site>/.mf/cache/projects.json` | GitHub API cache (gitignored) | mf |
+| `<site>/.mf/config.yaml` | mf settings (backup retention, etc.) | mf |
+| `<site>/.mf/backups/papers/` | Paper database backups | mf |
+| `<site>/.mf/backups/projects/` | Projects database backups | mf |
+| `<site>/.mf/backups/series/` | Series database backups | mf |
 | `~/.config/repoindex/` | Repo metadata store | repoindex |
 | `~/.config/crier/config.json` | Platform credentials | crier |
 

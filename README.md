@@ -1,5 +1,8 @@
 # mf
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+
 A CLI toolkit for synchronizing external content sources to a Hugo static site.
 
 ## The Problem
@@ -47,7 +50,8 @@ The databases are the source of truth. Hugo pages are derived artifacts. When so
 ## Installation
 
 ```bash
-cd scripts/mf
+git clone https://github.com/queelius/mf.git
+cd mf
 pip install -e .
 
 # With PDF support (thumbnails, page counts)
@@ -55,6 +59,9 @@ pip install -e ".[pdf]"
 
 # With dev tools (pytest, mypy, ruff)
 pip install -e ".[dev]"
+
+# Everything
+pip install -e ".[all]"
 ```
 
 Requires Python 3.10+.
@@ -220,14 +227,23 @@ export MF_SITE_ROOT=/path/to/hugo/site
 
 **Explicit linking.** Content-to-project relationships use the `linked_project` taxonomy, not magic inference. Automation suggests; humans approve.
 
+## Relationship to metafunctor.com
+
+`mf` was extracted from the [metafunctor](https://github.com/queelius/metafunctor) Hugo site repository into its own standalone package. It operates on the Hugo site via path resolution (see Configuration above) but has no direct dependency on the site repo.
+
+This decoupling means:
+- `mf` can be installed and versioned independently
+- The Hugo site repo stays clean (no Python tooling mixed in)
+- `mf` can be reused or adapted for other Hugo sites
+
 ## Adapting for Your Site
 
-This tool is built for [metafunctor.com](https://metafunctor.com) but the patterns are transferable. If you have a similar setup (Hugo site + external content sources), fork and adapt:
+While built for [metafunctor.com](https://metafunctor.com), the patterns are transferable. If you have a similar setup (Hugo site + external content sources), fork and adapt:
 
 1. Modify the content type schemas in `src/mf/core/database.py`
 2. Adjust the Hugo generators in `src/mf/papers/` and `src/mf/projects/`
 3. Update front matter field names to match your theme
-4. Keep the backup/integrity/analytics infrastructure—it's general-purpose
+4. Keep the backup/integrity/analytics infrastructure — it's general-purpose
 
 See `CLAUDE.md` for architecture details.
 

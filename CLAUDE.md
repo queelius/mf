@@ -4,7 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-`mf` is a CLI toolkit for synchronizing external sources (LaTeX papers, GitHub projects) to the metafunctor.com Hugo static site. It provides database-backed management with automatic backups, GitHub integration, and Hugo content generation.
+`mf` is a standalone CLI toolkit for synchronizing external sources (LaTeX papers, GitHub projects) to the metafunctor.com Hugo static site. It was extracted from the [metafunctor](https://github.com/queelius/metafunctor) site repo into its own package at [github.com/queelius/mf](https://github.com/queelius/mf).
+
+**Repo relationship:** `mf` is a separate repo that *operates on* the Hugo site via path resolution (`MF_SITE_ROOT` or `~/.config/mf/config.yaml`). It has no direct dependency on the site repo — the two are decoupled.
 
 **Core Identity:** External source → Hugo content synchronization
 - Papers: LaTeX source files → Hugo paper pages

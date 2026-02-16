@@ -54,7 +54,7 @@ mf = "mf.cli:main"
 
 [project.urls]
 Homepage = "https://metafunctor.com"
-Repository = "https://github.com/queelius/metafunctor"
+Repository = "https://github.com/queelius/mf"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/mf"]
