@@ -107,6 +107,7 @@ def mock_site_root(tmp_path, monkeypatch):
     (mf_dir / "backups" / "papers").mkdir(parents=True)
     (mf_dir / "backups" / "projects").mkdir(parents=True)
     (mf_dir / "backups" / "series").mkdir(parents=True)
+    (mf_dir / "backups" / "packages").mkdir(parents=True)
 
     # Create content directory structure
     (tmp_path / "content" / "papers").mkdir(parents=True)
@@ -114,6 +115,7 @@ def mock_site_root(tmp_path, monkeypatch):
     (tmp_path / "content" / "publications").mkdir(parents=True)
     (tmp_path / "content" / "post").mkdir(parents=True)
     (tmp_path / "content" / "series").mkdir(parents=True)
+    (tmp_path / "content" / "packages").mkdir(parents=True)
     (tmp_path / "static" / "latex").mkdir(parents=True)
 
     # Mock get_site_root to return our tmp_path

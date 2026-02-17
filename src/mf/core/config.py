@@ -52,6 +52,11 @@ class SitePaths:
     # Series database
     series_db: Path
 
+    # Packages
+    packages: Path
+    packages_db: Path
+    packages_backups: Path
+
 
 def get_global_config_path() -> Path:
     """Return the path to the global mf config file.
@@ -209,4 +214,8 @@ def get_paths(site_root: Path | None = None) -> SitePaths:
         series_backups=mf_dir / "backups" / "series",
         # Series database
         series_db=mf_dir / "series_db.json",
+        # Packages
+        packages=site_root / "content" / "packages",
+        packages_db=mf_dir / "packages_db.json",
+        packages_backups=mf_dir / "backups" / "packages",
     )

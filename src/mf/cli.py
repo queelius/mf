@@ -80,6 +80,7 @@ def init(ctx, force: bool) -> None:
         mf_dir / "backups" / "papers",
         mf_dir / "backups" / "projects",
         mf_dir / "backups" / "series",
+        mf_dir / "backups" / "packages",
     ]
 
     for dir_path in dirs_to_create:
