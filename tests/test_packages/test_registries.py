@@ -5,11 +5,14 @@ from pathlib import Path
 
 import pytest
 
+from unittest.mock import MagicMock, patch
+
 from mf.packages.registries import (
     PackageMetadata,
     RegistryAdapter,
     _load_adapter_from_file,
     discover_registries,
+    fetch_json,
 )
 
 
@@ -304,3 +307,38 @@ class TestDiscoverRegistries:
                 adapter.fetch_metadata
             ), f"{reg_name}: fetch_metadata not callable"
             assert adapter.name == reg_name, f"adapter.name '{adapter.name}' != key '{reg_name}'"
+
+
+class TestFetchJson:
+    """Tests for the shared fetch_json utility."""
+
+    @patch("mf.packages.registries.urllib.request.urlopen")
+    def test_returns_parsed_json(self, mock_urlopen):
+        """fetch_json returns parsed dict from JSON response."""
+        mock_response = MagicMock()
+        mock_response.read.return_value = b'{"key": "value"}'
+        mock_response.__enter__ = lambda s: s
+        mock_response.__exit__ = MagicMock(return_value=False)
+        mock_urlopen.return_value = mock_response
+
+        result = fetch_json("https://example.com/api")
+        assert result == {"key": "value"}
+
+    @patch("mf.packages.registries.urllib.request.urlopen")
+    def test_returns_none_on_network_error(self, mock_urlopen):
+        """fetch_json returns None on network errors."""
+        mock_urlopen.side_effect = ConnectionError("refused")
+        result = fetch_json("https://example.com/api")
+        assert result is None
+
+    @patch("mf.packages.registries.urllib.request.urlopen")
+    def test_returns_none_on_invalid_json(self, mock_urlopen):
+        """fetch_json returns None when response is not valid JSON."""
+        mock_response = MagicMock()
+        mock_response.read.return_value = b"not json"
+        mock_response.__enter__ = lambda s: s
+        mock_response.__exit__ = MagicMock(return_value=False)
+        mock_urlopen.return_value = mock_response
+
+        result = fetch_json("https://example.com/api")
+        assert result is None

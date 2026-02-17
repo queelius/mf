@@ -322,3 +322,61 @@ class TestHomepageFallback:
         result = adapter.fetch_metadata("test")
         assert result is not None
         assert result.homepage is None
+
+
+class TestVersionEdgeCases:
+    """Tests for version extraction edge cases."""
+
+    @patch("mf.packages.registries.pypi.fetch_json")
+    def test_release_with_empty_files_skipped(self, mock_fetch):
+        """Releases with empty file lists are skipped."""
+        response = {
+            "info": {
+                "name": "pkg",
+                "version": "1.0.0",
+                "summary": "Test",
+                "home_page": "",
+                "license": "MIT",
+            },
+            "releases": {
+                "1.0.0": [{"upload_time": "2024-01-01T00:00:00"}],
+                "0.9.0": [],  # Empty files list
+            },
+        }
+        mock_fetch.side_effect = [response, None]
+        result = adapter.fetch_metadata("pkg")
+        assert result is not None
+        assert result.versions is not None
+        assert len(result.versions) == 1
+        assert "0.9.0" not in result.versions
+
+    @patch("mf.packages.registries.pypi.fetch_json")
+    def test_release_with_no_upload_time_skipped(self, mock_fetch):
+        """Releases without upload_time in any file are skipped."""
+        response = {
+            "info": {
+                "name": "pkg",
+                "version": "1.0.0",
+                "summary": "Test",
+                "home_page": "",
+                "license": "MIT",
+            },
+            "releases": {
+                "1.0.0": [{"upload_time": "2024-01-01T00:00:00"}],
+                "0.9.0": [{"filename": "pkg-0.9.0.tar.gz"}],  # No upload_time
+            },
+        }
+        mock_fetch.side_effect = [response, None]
+        result = adapter.fetch_metadata("pkg")
+        assert result is not None
+        assert result.versions is not None
+        assert len(result.versions) == 1
+
+    @patch("mf.packages.registries.pypi.fetch_json")
+    def test_download_stats_zero_last_month(self, mock_fetch):
+        """Downloads returns None when last_month is 0 (falsy)."""
+        stats_response = {"data": {"last_month": 0}}
+        mock_fetch.side_effect = [SAMPLE_PYPI_RESPONSE, stats_response]
+        result = adapter.fetch_metadata("requests")
+        assert result is not None
+        assert result.downloads is None

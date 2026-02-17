@@ -1,6 +1,7 @@
 """Tests for mf.packages.generator -- Hugo content generation for packages."""
 
 import json
+from unittest.mock import patch
 
 import pytest
 
@@ -141,3 +142,15 @@ def test_optional_fields_omitted(mock_site_root, pkg_db):
     # But it does have fields that are set
     assert 'registry: "cran"' in text
     assert 'description: "Beta package for CRAN"' in text
+
+
+def test_generate_all_handles_exception(mock_site_root, pkg_db):
+    """generate_all_packages counts exceptions as failures."""
+    with patch(
+        "mf.packages.generator.generate_package_content",
+        side_effect=RuntimeError("write error"),
+    ):
+        success, failed = generate_all_packages(pkg_db)
+
+    assert success == 0
+    assert failed == 2

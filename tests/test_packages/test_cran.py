@@ -269,3 +269,25 @@ class TestEdgeCases:
         mock_fetch.return_value = None
         adapter.fetch_metadata("dplyr")
         mock_fetch.assert_called_once_with("https://crandb.r-pkg.org/dplyr")
+
+    @patch("mf.packages.registries.cran.fetch_json")
+    def test_date_fallback_to_date_only(self, mock_fetch):
+        """Falls back to date-only parsing when full datetime fails."""
+        response = dict(SAMPLE_CRAN_RESPONSE)
+        response["Date/Publication"] = "2024-03-15"
+        mock_fetch.return_value = response
+        result = adapter.fetch_metadata("test-pkg")
+        assert result is not None
+        assert result.last_updated is not None
+        assert result.last_updated.year == 2024
+        assert result.last_updated.month == 3
+
+    @patch("mf.packages.registries.cran.fetch_json")
+    def test_date_completely_unparseable(self, mock_fetch):
+        """last_updated is None when date is completely invalid."""
+        response = dict(SAMPLE_CRAN_RESPONSE)
+        response["Date/Publication"] = "not-a-date-at-all"
+        mock_fetch.return_value = response
+        result = adapter.fetch_metadata("test-pkg")
+        assert result is not None
+        assert result.last_updated is None
