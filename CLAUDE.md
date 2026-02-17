@@ -4,165 +4,116 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-`mf` is a standalone CLI toolkit for synchronizing external sources (LaTeX papers, GitHub projects) to the metafunctor.com Hugo static site. It was extracted from the [metafunctor](https://github.com/queelius/metafunctor) site repo into its own package at [github.com/queelius/mf](https://github.com/queelius/mf).
+`mf` is a standalone CLI toolkit for synchronizing external sources (LaTeX papers, GitHub projects, PyPI/CRAN packages) to the metafunctor.com Hugo static site. Extracted from the [metafunctor](https://github.com/queelius/metafunctor) site repo into its own package at [github.com/queelius/mf](https://github.com/queelius/mf).
 
-**Repo relationship:** `mf` is a separate repo that *operates on* the Hugo site via path resolution (`MF_SITE_ROOT` or `~/.config/mf/config.yaml`). It has no direct dependency on the site repo — the two are decoupled.
+**Core identity:** External source → JSON database → Hugo content. Databases are truth; Hugo pages are derived artifacts.
 
-**Core Identity:** External source → Hugo content synchronization
-- Papers: LaTeX source files → Hugo paper pages
-- Projects: GitHub repos → Hugo project pages
-- Packages: Registry metadata (PyPI, CRAN) → Hugo package pages
-- Series: External source repos → Hugo series landing pages
-- Posts: Direct front matter management (no database)
+**Repo relationship:** `mf` operates on a Hugo site via path resolution (`MF_SITE_ROOT` env → walk-up for `.mf/` → `~/.config/mf/config.yaml`). It has no dependency on the site repo itself.
 
 ## Development Commands
 
 ```bash
-# Install in development mode
-pip install -e .
-pip install -e ".[dev]"     # With dev dependencies
-pip install -e ".[all]"     # With PDF support and dev tools
+# Install
+pip install -e ".[dev]"          # Dev dependencies (pytest, mypy, ruff)
+pip install -e ".[all]"          # Everything including PDF support
 
-# Run tests
-pytest                       # All tests (1271 tests)
-pytest tests/test_core/      # Specific directory
-pytest -k "test_backup"      # Tests matching pattern
-pytest --cov=mf --cov-report=html  # With coverage
+# Tests (1271 tests)
+pytest                            # All tests
+pytest tests/test_papers/         # One module
+pytest -k "test_backup"           # Pattern match
+pytest --cov=mf --cov-report=html # Coverage
 
-# Type checking and linting
-mypy src/mf
+# Lint and type check
 ruff check src/mf
+mypy src/mf
 ```
+
+Test config is in `pyproject.toml` under `[tool.pytest.ini_options]` — `testpaths = ["tests"]`, `pythonpath = ["src"]`, `addopts = "-v --tb=short"`. Ruff uses `line-length = 100`, ignores E501, targets Python 3.10.
 
 ## Architecture
 
-### Module Structure (`src/mf/`)
+### Module Layout (`src/mf/`)
 
-| Module | Purpose | Has DB? |
-|--------|---------|---------|
-| `papers/` | LaTeX paper processing and Hugo content generation | `paper_db.json` |
-| `projects/` | GitHub project import, refresh, and content generation | `projects_db.json` |
-| `series/` | Content series management and sync with external repos | `series_db.json` |
-| `packages/` | Package registry management and Hugo content generation | `packages_db.json` |
-| `posts/` | Blog post front matter management | No (reads Hugo files directly) |
-| `publications/` | Peer-reviewed subset of papers | Uses `paper_db.json` |
-| `content/` | Cross-content operations (linking, auditing, scanning) | No |
-| `taxonomy/` | Tag/category hygiene (duplicates, orphans, normalization) | No |
-| `health/` | Content health checks (links, descriptions, images, stale) | No |
-| `analytics/` | Content analytics and insights | No |
-| `core/` | Config, database base classes, backup, field ops, integrity | Shared infrastructure |
-| `backup/` | Backup management and rollback | No |
-| `config/` | Configuration management | No |
-| `claude/` | Claude Code integration (skill generation, context helpers) | No |
+| Module | Purpose | Database |
+|--------|---------|----------|
+| `papers/` | LaTeX → Hugo paper pages | `paper_db.json` |
+| `projects/` | GitHub repos → Hugo project pages | `projects_db.json` + `cache/projects.json` |
+| `series/` | External repo blog series → Hugo series pages | `series_db.json` |
+| `packages/` | PyPI/CRAN registry → Hugo package pages | `packages_db.json` |
+| `publications/` | Curated peer-reviewed subset of papers | Uses `paper_db.json` |
+| `posts/` | Blog post front matter management | None (reads Hugo files directly) |
+| `content/` | Cross-content linking, auditing, scanning | None |
+| `taxonomy/` | Tag/category hygiene | None |
+| `health/` | Content quality checks | None |
+| `analytics/` | Content analytics | None |
+| `core/` | Config, database base, backup, field ops, integrity | Infrastructure |
+| `backup/` | Backup management CLI | None |
+| `config/` | Config management CLI | None |
+| `claude/` | Claude Code skill generation/installation | None |
 
-### CLI Structure (`src/mf/cli.py`)
+### CLI Entry Point (`src/mf/cli.py`)
 
-Entry point using Click. All command groups registered at module level via `main.add_command()`.
+Click-based CLI. The `main` group accepts `--verbose`/`--dry-run` as global options, stored in a `Context` object passed via `@click.pass_obj`. Command groups are registered via `main.add_command()` at module level.
 
-**Core (database-backed):**
-- `mf papers` — generate, sync, process, set/unset, feature, tag, zenodo, fetch-cff, stats, show, list
-- `mf projects` — import, refresh, sync, generate, clean, set/unset, feature, hide, tag, fetch-codemeta, make-rich, stats, show, list
-- `mf series` — list, show, stats, sync, create, delete, add/remove, set/unset, feature, tag
-- `mf packages` — list, show, add, remove, sync, generate, set/unset, feature, tag, fields, stats
-- `mf pubs` — generate, sync, list
-
-**Content operations (no database):**
-- `mf posts` — list, create, set/unset, feature, tag
-- `mf content` — match-projects, about, list-projects, audit (with `--extended`, `--check`, `--severity`)
-- `mf taxonomy` — audit, normalize, orphans, stats
-- `mf health` — links, descriptions, images, stale, drafts
-
-**Infrastructure:**
-- `mf analytics` — projects, gaps, tags, timeline, suggestions, summary
-- `mf integrity` — check, fix, orphans
-- `mf backup` — Backup management and rollback
-- `mf config` — Configuration management
-- `mf claude` — Claude Code integration (skill generation, context helpers)
-
-Global options: `--verbose`, `--dry-run`
+Command groups: `papers`, `projects`, `series`, `packages`, `pubs`, `posts`, `content`, `taxonomy`, `health`, `analytics`, `integrity`, `backup`, `config`, `claude`.
 
 ### Core Layer (`src/mf/core/`)
 
-- `config.py` — 3-tier site root resolution: `MF_SITE_ROOT` env → walk-up for `.mf/` → global config (`~/.config/mf/config.yaml`). Path management via `SitePaths` dataclass. The global config allows `mf` to work from any directory.
-- `database.py` — Database classes: `PaperDatabase`, `ProjectsDatabase`, `ProjectsCache`, `SeriesDatabase`, `PackageDatabase`
-- `backup.py` — Atomic JSON writes with timestamped backups and rotation
-- `field_ops.py` — Generic field schema (`FieldDef`, `FieldType`), coercion, validation, and change tracking (`ChangeResult`). Uses `FieldDatabase` protocol. Domain-specific schemas in `papers/field_ops.py`, `projects/field_ops.py`, `series/field_ops.py`, `packages/field_ops.py`.
-- `integrity.py` — Cross-database validation and consistency checks
-- `crypto.py` — Hash utilities for source file tracking
-- `prompts.py` — Interactive prompts
+**`config.py`** — 3-tier site root resolution (env → walk-up → global config). `get_site_root()` is `lru_cache`-decorated — tests must call `config.get_site_root.cache_clear()` before monkeypatching. `SitePaths` frozen dataclass holds all derived paths. `get_paths()` builds `SitePaths` from a site root.
+
+**`database.py`** — `PaperDatabase`, `ProjectsDatabase`, `ProjectsCache`, `SeriesDatabase`, `PackageDatabase`. All follow the same interface: JSON files with `_comment`/`_example`/`_schema_version` metadata keys, `load()`/`save()` with auto-backup, CRUD + `search()` with filters, entry dataclasses (`PaperEntry`, `PackageEntry`, etc.) wrapping `dict[str, Any]`.
+
+**`field_ops.py`** — Generic `FieldDef`/`FieldType`/`ChangeResult` infrastructure. The `FieldDatabase` protocol normalizes set/unset/modify across database types. Each domain module (`papers/field_ops.py`, `projects/field_ops.py`, etc.) defines its own `FIELD_SCHEMA` dict.
+
+**`backup.py`** — `safe_write_json()` does atomic writes with timestamped backups and rotation.
+
+**`integrity.py`** / **`integrity_commands.py`** — Cross-database validation. The CLI is in `integrity_commands.py` (not `integrity/commands.py`), imported directly in `cli.py`.
 
 ### Key Patterns
 
-**Database pattern:** All databases follow the same interface:
-- JSON files with `_comment`, `_example`, `_schema_version` metadata keys
-- `load()` / `save()` with automatic backup creation
-- `get()`, `set()`, `update()`, `delete()` operations
-- `search()` with filters (query, tags, category, etc.)
-- Entry dataclasses (`PaperEntry`, `PackageEntry`) with property accessors
+**Database-backed modules** (papers, projects, series, packages) all share: `commands.py` (Click CLI), `field_ops.py` (schema), `generator.py` (Hugo content output), plus domain-specific files. The `set`/`unset`/`feature`/`tag` commands use shared infrastructure from `core/field_ops.py`.
 
-**Field operations pattern:** `set`/`unset`/`feature`/`tag` commands share generic infrastructure from `core/field_ops.py`. Each domain (papers, projects, series, packages) defines its own `FIELD_SCHEMA` dict mapping field names to `FieldDef` objects. Common flags: `--regenerate` triggers content regeneration after change, `--off` reverses toggles.
+**Posts are database-free:** `mf posts` reads and writes Hugo front matter directly via `ContentScanner` and `FrontMatterEditor`. No `.mf/*.json` involved.
 
-**Posts are database-free:** Unlike papers/projects/series, `mf posts` reads and writes Hugo front matter directly via `ContentScanner` and `FrontMatterEditor`. No `.mf/*.json` involved.
+**ContentScanner** (`content/scanner.py`): Central Hugo content reader. Scans content directories, parses YAML front matter, returns structured items. Used by posts, taxonomy, health, analytics, and content audit. Defines `CONTENT_TYPES` mapping section names to paths (note: posts use singular `content/post`, not `content/posts`).
 
-**ContentScanner:** Central content reader in `content/scanner.py`. Scans Hugo content directories, parses front matter, and returns structured items. Used by posts, taxonomy, health, analytics, and content audit.
+**Registry adapter pattern** (`packages/registries/`): PyPI and CRAN adapters satisfy a `RegistryAdapter` protocol. Users can override by placing scripts in `.mf/registries/`. Each adapter module exposes a module-level `adapter` instance.
 
-### Path Resolution
+### Path Resolution and Data Files
 
-3-tier resolution for finding site root:
-1. `MF_SITE_ROOT` environment variable (highest priority, used in tests)
-2. Walk up from cwd looking for `.mf/` directory
-3. Global config file `~/.config/mf/config.yaml` `site_root` key (allows `mf` to work from any directory)
-
-All paths derived from site root via `get_paths()` → `SitePaths` dataclass.
-
-### Data Files (in `.mf/` directory)
+All `mf` data lives in `.mf/` at the Hugo site root (not in this repo):
 
 ```
 .mf/
-  paper_db.json           # Paper metadata
-  projects_db.json        # Project overrides
-  series_db.json          # Series metadata
-  packages_db.json        # Package registry metadata
-  config.yaml             # mf configuration
-  cache/
-    projects.json         # GitHub API cache (gitignored)
-  backups/
-    papers/               # Paper database backups
-    projects/             # Projects database backups
-    series/               # Series database backups
-    packages/             # Package database backups
-  registries/             # User-provided registry adapter overrides
+  paper_db.json         projects_db.json      series_db.json      packages_db.json
+  config.yaml
+  cache/projects.json   (gitignored)
+  backups/{papers,projects,series,packages}/
+  registries/           (user-provided adapter overrides)
 ```
-
-## Content Generation Workflow
 
 ### Papers vs Publications
 
-1. **`/papers/`** — All papers (preprints, drafts, published). Generated FROM `paper_db.json` via `mf papers generate`. Uses `pdf_path`, `html_path`, `cite_path`.
-
-2. **`/publications/`** — Curated subset (peer-reviewed, published only). Generated FROM `paper_db.json` via `mf pubs generate`. Only entries with `status: "published"`, a `venue`, or a DOI.
-
-| paper_db.json | content/papers/ | content/publications/ |
-|---------------|-----------------|----------------------|
-| `pdf_path`    | `pdf_file` (filename only) | `pdf` (full path) |
-| `html_path`   | Used in body HTML | `html` (directory path) |
-| `cite_path`   | Used in body HTML | `cite` (full path) |
-
-### Zenodo Integration
-
-`mf papers zenodo` manages DOI registration via the Zenodo API. Requires `ZENODO_API_TOKEN` env var. Supports sandbox mode for testing.
-
-### README URL Rewriting
-
-`projects/readme.py` rewrites relative URLs in imported GitHub READMEs to absolute GitHub URLs (blob/tree/raw.githubusercontent.com).
+`/papers/` = all papers (preprints, drafts, published). `/publications/` = curated subset (peer-reviewed only, filtered by `status: "published"`, venue, or DOI). Both generated from `paper_db.json` but with different front matter schemas — papers use `pdf_file` (filename), publications use `pdf` (full path).
 
 ## Testing
 
 Tests use `tmp_path` fixture for isolation. Key fixtures in `tests/conftest.py`:
-- `sample_paper_db`, `sample_projects_db` — Pre-populated test databases
-- `mock_site_root` — Creates mock Hugo site structure and sets `MF_SITE_ROOT`
+- `mock_site_root` — Creates full `.mf/` + `content/` structure, monkeypatches `get_site_root()` (with cache clear)
+- `create_content_file` — Factory fixture for creating Hugo content files with YAML front matter
+- `sample_paper_db`, `sample_projects_db`, `sample_series_db` — Pre-populated test databases
 
-Test directories mirror source: `tests/test_papers/`, `tests/test_projects/`, `tests/test_series/`, `tests/test_packages/`, `tests/test_posts/`, `tests/test_taxonomy/`, `tests/test_health/`, `tests/test_core/`, `tests/test_publications/`, `tests/test_analytics/`, etc.
+Test directories mirror source: `tests/test_papers/`, `tests/test_projects/`, etc.
+
+## Site Contract
+
+`SITE_CONTRACT.md` documents every assumption `mf` makes about the Hugo site it operates on — content section names, static asset paths, front matter schemas, taxonomy configuration, and theme layouts. Read it before modifying any generator or template code.
+
+Key gotchas documented there:
+- Posts use `content/post` (singular), not `content/posts`
+- `linked_project` taxonomy has URL slug `linked-projects` (with hyphen) because `/projects/` is taken
+- GitHub username `queelius` is hardcoded in `content/scanner.py`, `content/matcher.py`, `analytics/aggregator.py`
+- Fallback URL `metafunctor.com` is hardcoded in `series/mkdocs.py`
 
 ## Tool Orchestration
 
