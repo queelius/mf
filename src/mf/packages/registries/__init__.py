@@ -7,13 +7,34 @@ and users can override or extend via extra directories (e.g. .mf/registries/).
 from __future__ import annotations
 
 import importlib.util
+import json
 import logging
+import urllib.request
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
 logger = logging.getLogger(__name__)
+
+
+def fetch_json(url: str, timeout: int = 10) -> dict | None:
+    """Fetch JSON data from a URL.
+
+    Args:
+        url: URL to fetch.
+        timeout: Request timeout in seconds.
+
+    Returns:
+        Parsed JSON dict, or None on any error.
+    """
+    try:
+        req = urllib.request.Request(url, headers={"Accept": "application/json"})
+        with urllib.request.urlopen(req, timeout=timeout) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except Exception:
+        logger.debug("Failed to fetch %s", url, exc_info=True)
+        return None
 
 
 @dataclass

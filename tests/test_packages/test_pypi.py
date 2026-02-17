@@ -86,14 +86,14 @@ class TestModuleLevelAdapter:
 class TestFetchMetadataSuccess:
     """Tests for successful metadata fetching."""
 
-    @patch("mf.packages.registries.pypi._fetch_json")
+    @patch("mf.packages.registries.pypi.fetch_json")
     def test_returns_package_metadata(self, mock_fetch):
         """fetch_metadata returns PackageMetadata on success."""
         mock_fetch.side_effect = [SAMPLE_PYPI_RESPONSE, SAMPLE_PYPISTATS_RESPONSE]
         result = adapter.fetch_metadata("requests")
         assert isinstance(result, PackageMetadata)
 
-    @patch("mf.packages.registries.pypi._fetch_json")
+    @patch("mf.packages.registries.pypi.fetch_json")
     def test_name_extracted(self, mock_fetch):
         """Package name is extracted from response."""
         mock_fetch.side_effect = [SAMPLE_PYPI_RESPONSE, SAMPLE_PYPISTATS_RESPONSE]
@@ -101,7 +101,7 @@ class TestFetchMetadataSuccess:
         assert result is not None
         assert result.name == "requests"
 
-    @patch("mf.packages.registries.pypi._fetch_json")
+    @patch("mf.packages.registries.pypi.fetch_json")
     def test_registry_is_pypi(self, mock_fetch):
         """Registry is always 'pypi'."""
         mock_fetch.side_effect = [SAMPLE_PYPI_RESPONSE, SAMPLE_PYPISTATS_RESPONSE]
@@ -109,7 +109,7 @@ class TestFetchMetadataSuccess:
         assert result is not None
         assert result.registry == "pypi"
 
-    @patch("mf.packages.registries.pypi._fetch_json")
+    @patch("mf.packages.registries.pypi.fetch_json")
     def test_version_extracted(self, mock_fetch):
         """Latest version is extracted from response."""
         mock_fetch.side_effect = [SAMPLE_PYPI_RESPONSE, SAMPLE_PYPISTATS_RESPONSE]
@@ -117,7 +117,7 @@ class TestFetchMetadataSuccess:
         assert result is not None
         assert result.latest_version == "2.31.0"
 
-    @patch("mf.packages.registries.pypi._fetch_json")
+    @patch("mf.packages.registries.pypi.fetch_json")
     def test_description_extracted(self, mock_fetch):
         """Description comes from the summary field."""
         mock_fetch.side_effect = [SAMPLE_PYPI_RESPONSE, SAMPLE_PYPISTATS_RESPONSE]
@@ -125,7 +125,7 @@ class TestFetchMetadataSuccess:
         assert result is not None
         assert result.description == "Python HTTP for Humans."
 
-    @patch("mf.packages.registries.pypi._fetch_json")
+    @patch("mf.packages.registries.pypi.fetch_json")
     def test_homepage_extracted(self, mock_fetch):
         """Homepage is extracted from home_page field."""
         mock_fetch.side_effect = [SAMPLE_PYPI_RESPONSE, SAMPLE_PYPISTATS_RESPONSE]
@@ -133,7 +133,7 @@ class TestFetchMetadataSuccess:
         assert result is not None
         assert result.homepage == "https://requests.readthedocs.io"
 
-    @patch("mf.packages.registries.pypi._fetch_json")
+    @patch("mf.packages.registries.pypi.fetch_json")
     def test_license_extracted(self, mock_fetch):
         """License is extracted from response."""
         mock_fetch.side_effect = [SAMPLE_PYPI_RESPONSE, SAMPLE_PYPISTATS_RESPONSE]
@@ -141,7 +141,7 @@ class TestFetchMetadataSuccess:
         assert result is not None
         assert result.license == "Apache-2.0"
 
-    @patch("mf.packages.registries.pypi._fetch_json")
+    @patch("mf.packages.registries.pypi.fetch_json")
     def test_install_command(self, mock_fetch):
         """Install command is pip install <name>."""
         mock_fetch.side_effect = [SAMPLE_PYPI_RESPONSE, SAMPLE_PYPISTATS_RESPONSE]
@@ -149,7 +149,7 @@ class TestFetchMetadataSuccess:
         assert result is not None
         assert result.install_command == "pip install requests"
 
-    @patch("mf.packages.registries.pypi._fetch_json")
+    @patch("mf.packages.registries.pypi.fetch_json")
     def test_registry_url(self, mock_fetch):
         """Registry URL points to PyPI project page."""
         mock_fetch.side_effect = [SAMPLE_PYPI_RESPONSE, SAMPLE_PYPISTATS_RESPONSE]
@@ -157,7 +157,7 @@ class TestFetchMetadataSuccess:
         assert result is not None
         assert result.registry_url == "https://pypi.org/project/requests/"
 
-    @patch("mf.packages.registries.pypi._fetch_json")
+    @patch("mf.packages.registries.pypi.fetch_json")
     def test_last_updated_parsed(self, mock_fetch):
         """last_updated is parsed from latest release upload_time."""
         mock_fetch.side_effect = [SAMPLE_PYPI_RESPONSE, SAMPLE_PYPISTATS_RESPONSE]
@@ -177,7 +177,7 @@ class TestFetchMetadataSuccess:
 class TestDownloads:
     """Tests for download statistics."""
 
-    @patch("mf.packages.registries.pypi._fetch_json")
+    @patch("mf.packages.registries.pypi.fetch_json")
     def test_downloads_from_pypistats(self, mock_fetch):
         """Downloads come from pypistats last_month."""
         mock_fetch.side_effect = [SAMPLE_PYPI_RESPONSE, SAMPLE_PYPISTATS_RESPONSE]
@@ -185,7 +185,7 @@ class TestDownloads:
         assert result is not None
         assert result.downloads == 150000000
 
-    @patch("mf.packages.registries.pypi._fetch_json")
+    @patch("mf.packages.registries.pypi.fetch_json")
     def test_downloads_none_when_pypistats_fails(self, mock_fetch):
         """Downloads are None when pypistats call fails."""
         mock_fetch.side_effect = [SAMPLE_PYPI_RESPONSE, None]
@@ -193,7 +193,7 @@ class TestDownloads:
         assert result is not None
         assert result.downloads is None
 
-    @patch("mf.packages.registries.pypi._fetch_json")
+    @patch("mf.packages.registries.pypi.fetch_json")
     def test_downloads_none_when_pypistats_missing_data(self, mock_fetch):
         """Downloads are None when pypistats response has no data."""
         mock_fetch.side_effect = [SAMPLE_PYPI_RESPONSE, {"data": {}}]
@@ -210,7 +210,7 @@ class TestDownloads:
 class TestVersions:
     """Tests for version extraction."""
 
-    @patch("mf.packages.registries.pypi._fetch_json")
+    @patch("mf.packages.registries.pypi.fetch_json")
     def test_versions_limited_to_10(self, mock_fetch):
         """Versions list is limited to 10 entries."""
         mock_fetch.side_effect = [SAMPLE_PYPI_RESPONSE, SAMPLE_PYPISTATS_RESPONSE]
@@ -219,7 +219,7 @@ class TestVersions:
         assert result.versions is not None
         assert len(result.versions) == 10
 
-    @patch("mf.packages.registries.pypi._fetch_json")
+    @patch("mf.packages.registries.pypi.fetch_json")
     def test_versions_sorted_by_upload_time(self, mock_fetch):
         """Versions are sorted by upload time, most recent first."""
         mock_fetch.side_effect = [SAMPLE_PYPI_RESPONSE, SAMPLE_PYPISTATS_RESPONSE]
@@ -229,7 +229,7 @@ class TestVersions:
         assert result.versions[0] == "2.31.0"
         assert result.versions[1] == "2.30.0"
 
-    @patch("mf.packages.registries.pypi._fetch_json")
+    @patch("mf.packages.registries.pypi.fetch_json")
     def test_fewer_than_10_versions(self, mock_fetch):
         """Works correctly with fewer than 10 versions."""
         small_response = {
@@ -260,16 +260,16 @@ class TestVersions:
 class TestFetchMetadataFailure:
     """Tests for fetch_metadata returning None."""
 
-    @patch("mf.packages.registries.pypi._fetch_json")
+    @patch("mf.packages.registries.pypi.fetch_json")
     def test_returns_none_when_fetch_fails(self, mock_fetch):
         """fetch_metadata returns None when PyPI API call fails."""
         mock_fetch.return_value = None
         result = adapter.fetch_metadata("nonexistent-package")
         assert result is None
 
-    @patch("mf.packages.registries.pypi._fetch_json")
+    @patch("mf.packages.registries.pypi.fetch_json")
     def test_pypi_call_is_first(self, mock_fetch):
-        """First _fetch_json call is to the PyPI API."""
+        """First fetch_json call is to the PyPI API."""
         mock_fetch.return_value = None
         adapter.fetch_metadata("test-pkg")
         assert mock_fetch.call_count >= 1
@@ -285,7 +285,7 @@ class TestFetchMetadataFailure:
 class TestHomepageFallback:
     """Tests for homepage extraction fallback logic."""
 
-    @patch("mf.packages.registries.pypi._fetch_json")
+    @patch("mf.packages.registries.pypi.fetch_json")
     def test_homepage_from_project_urls_when_home_page_empty(self, mock_fetch):
         """Falls back to project_urls.Homepage when home_page is empty."""
         response = {
@@ -304,7 +304,7 @@ class TestHomepageFallback:
         assert result is not None
         assert result.homepage == "https://example.com"
 
-    @patch("mf.packages.registries.pypi._fetch_json")
+    @patch("mf.packages.registries.pypi.fetch_json")
     def test_homepage_none_when_no_urls(self, mock_fetch):
         """Homepage is None when no URL sources are available."""
         response = {

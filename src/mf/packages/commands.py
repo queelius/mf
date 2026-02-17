@@ -306,6 +306,17 @@ def sync(ctx: Any, name: str | None) -> None:
             metadata = adapter.fetch_metadata(entry.name)
             if metadata:
                 old_version = entry.latest_version
+
+                if dry_run:
+                    if old_version != metadata.latest_version:
+                        console.print(
+                            f"    [dim]Would update: {old_version} -> {metadata.latest_version}[/dim]"
+                        )
+                    else:
+                        console.print(f"    [dim]No version change ({metadata.latest_version})[/dim]")
+                    synced += 1
+                    continue
+
                 entry.update(
                     description=metadata.description,
                     latest_version=metadata.latest_version,
@@ -385,13 +396,9 @@ def generate(ctx: Any, name: str | None) -> None:
 
 def _print_change(result: ChangeResult) -> None:
     """Print a ChangeResult as a formatted diff."""
-    console.print(f"[cyan]{result.slug}[/cyan]: {result.field}")
-    if result.old_value is not None:
-        console.print(f"  old: {result.old_value}")
-    if result.new_value is not None:
-        console.print(f"  new: {result.new_value}")
-    elif result.action == "unset":
-        console.print("  [dim](removed)[/dim]")
+    from mf.core.field_ops import print_change
+
+    print_change(result, console)
 
 
 @packages.command(name="fields")

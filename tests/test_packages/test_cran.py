@@ -62,14 +62,14 @@ class TestModuleLevelAdapter:
 class TestFetchMetadataSuccess:
     """Tests for successful metadata fetching."""
 
-    @patch("mf.packages.registries.cran._fetch_json")
+    @patch("mf.packages.registries.cran.fetch_json")
     def test_returns_package_metadata(self, mock_fetch):
         """fetch_metadata returns PackageMetadata on success."""
         mock_fetch.return_value = SAMPLE_CRAN_RESPONSE
         result = adapter.fetch_metadata("ggplot2")
         assert isinstance(result, PackageMetadata)
 
-    @patch("mf.packages.registries.cran._fetch_json")
+    @patch("mf.packages.registries.cran.fetch_json")
     def test_name_extracted(self, mock_fetch):
         """Package name comes from Package field."""
         mock_fetch.return_value = SAMPLE_CRAN_RESPONSE
@@ -77,7 +77,7 @@ class TestFetchMetadataSuccess:
         assert result is not None
         assert result.name == "ggplot2"
 
-    @patch("mf.packages.registries.cran._fetch_json")
+    @patch("mf.packages.registries.cran.fetch_json")
     def test_registry_is_cran(self, mock_fetch):
         """Registry is always 'cran'."""
         mock_fetch.return_value = SAMPLE_CRAN_RESPONSE
@@ -85,7 +85,7 @@ class TestFetchMetadataSuccess:
         assert result is not None
         assert result.registry == "cran"
 
-    @patch("mf.packages.registries.cran._fetch_json")
+    @patch("mf.packages.registries.cran.fetch_json")
     def test_version_extracted(self, mock_fetch):
         """Latest version comes from Version field."""
         mock_fetch.return_value = SAMPLE_CRAN_RESPONSE
@@ -93,7 +93,7 @@ class TestFetchMetadataSuccess:
         assert result is not None
         assert result.latest_version == "3.5.0"
 
-    @patch("mf.packages.registries.cran._fetch_json")
+    @patch("mf.packages.registries.cran.fetch_json")
     def test_description_from_title(self, mock_fetch):
         """Description comes from the Title field."""
         mock_fetch.return_value = SAMPLE_CRAN_RESPONSE
@@ -101,7 +101,7 @@ class TestFetchMetadataSuccess:
         assert result is not None
         assert result.description == "Create Elegant Data Visualisations Using the Grammar of Graphics"
 
-    @patch("mf.packages.registries.cran._fetch_json")
+    @patch("mf.packages.registries.cran.fetch_json")
     def test_homepage_from_first_url(self, mock_fetch):
         """Homepage is the first comma-separated URL."""
         mock_fetch.return_value = SAMPLE_CRAN_RESPONSE
@@ -109,7 +109,7 @@ class TestFetchMetadataSuccess:
         assert result is not None
         assert result.homepage == "https://ggplot2.tidyverse.org"
 
-    @patch("mf.packages.registries.cran._fetch_json")
+    @patch("mf.packages.registries.cran.fetch_json")
     def test_install_command(self, mock_fetch):
         """Install command uses install.packages()."""
         mock_fetch.return_value = SAMPLE_CRAN_RESPONSE
@@ -117,7 +117,7 @@ class TestFetchMetadataSuccess:
         assert result is not None
         assert result.install_command == "install.packages('ggplot2')"
 
-    @patch("mf.packages.registries.cran._fetch_json")
+    @patch("mf.packages.registries.cran.fetch_json")
     def test_registry_url(self, mock_fetch):
         """Registry URL points to CRAN package page."""
         mock_fetch.return_value = SAMPLE_CRAN_RESPONSE
@@ -125,7 +125,7 @@ class TestFetchMetadataSuccess:
         assert result is not None
         assert result.registry_url == "https://cran.r-project.org/package=ggplot2"
 
-    @patch("mf.packages.registries.cran._fetch_json")
+    @patch("mf.packages.registries.cran.fetch_json")
     def test_downloads_always_none(self, mock_fetch):
         """Downloads are always None (CRAN doesn't provide via crandb)."""
         mock_fetch.return_value = SAMPLE_CRAN_RESPONSE
@@ -133,7 +133,7 @@ class TestFetchMetadataSuccess:
         assert result is not None
         assert result.downloads is None
 
-    @patch("mf.packages.registries.cran._fetch_json")
+    @patch("mf.packages.registries.cran.fetch_json")
     def test_last_updated_parsed(self, mock_fetch):
         """Date/Publication is parsed into last_updated."""
         mock_fetch.return_value = SAMPLE_CRAN_RESPONSE
@@ -144,7 +144,7 @@ class TestFetchMetadataSuccess:
         assert result.last_updated.month == 2
         assert result.last_updated.day == 23
 
-    @patch("mf.packages.registries.cran._fetch_json")
+    @patch("mf.packages.registries.cran.fetch_json")
     def test_versions_extracted(self, mock_fetch):
         """Versions come from the versions dict keys."""
         mock_fetch.return_value = SAMPLE_CRAN_RESPONSE
@@ -163,7 +163,7 @@ class TestFetchMetadataSuccess:
 class TestLicenseCleaning:
     """Tests for license string cleanup."""
 
-    @patch("mf.packages.registries.cran._fetch_json")
+    @patch("mf.packages.registries.cran.fetch_json")
     def test_license_cleaned(self, mock_fetch):
         """'+ file LICENSE' is stripped from license."""
         mock_fetch.return_value = SAMPLE_CRAN_RESPONSE
@@ -191,7 +191,7 @@ class TestLicenseCleaning:
         """_clean_license returns None for empty string."""
         assert _clean_license("") is None
 
-    @patch("mf.packages.registries.cran._fetch_json")
+    @patch("mf.packages.registries.cran.fetch_json")
     def test_license_without_file_suffix(self, mock_fetch):
         """License without '+ file LICENSE' passes through cleanly."""
         response = dict(SAMPLE_CRAN_RESPONSE)
@@ -210,14 +210,14 @@ class TestLicenseCleaning:
 class TestFetchMetadataFailure:
     """Tests for fetch_metadata returning None."""
 
-    @patch("mf.packages.registries.cran._fetch_json")
+    @patch("mf.packages.registries.cran.fetch_json")
     def test_returns_none_when_fetch_fails(self, mock_fetch):
         """fetch_metadata returns None when crandb API call fails."""
         mock_fetch.return_value = None
         result = adapter.fetch_metadata("nonexistent-package")
         assert result is None
 
-    @patch("mf.packages.registries.cran._fetch_json")
+    @patch("mf.packages.registries.cran.fetch_json")
     def test_returns_none_when_error_in_response(self, mock_fetch):
         """fetch_metadata returns None when response contains 'error' key."""
         mock_fetch.return_value = {"error": "not_found", "reason": "missing"}
@@ -233,7 +233,7 @@ class TestFetchMetadataFailure:
 class TestEdgeCases:
     """Tests for edge cases."""
 
-    @patch("mf.packages.registries.cran._fetch_json")
+    @patch("mf.packages.registries.cran.fetch_json")
     def test_no_url_field(self, mock_fetch):
         """Homepage is None when URL field is absent."""
         response = dict(SAMPLE_CRAN_RESPONSE)
@@ -243,7 +243,7 @@ class TestEdgeCases:
         assert result is not None
         assert result.homepage is None
 
-    @patch("mf.packages.registries.cran._fetch_json")
+    @patch("mf.packages.registries.cran.fetch_json")
     def test_no_date_publication(self, mock_fetch):
         """last_updated is None when Date/Publication is absent."""
         response = dict(SAMPLE_CRAN_RESPONSE)
@@ -253,7 +253,7 @@ class TestEdgeCases:
         assert result is not None
         assert result.last_updated is None
 
-    @patch("mf.packages.registries.cran._fetch_json")
+    @patch("mf.packages.registries.cran.fetch_json")
     def test_no_versions_dict(self, mock_fetch):
         """versions is None when versions field is not a dict."""
         response = dict(SAMPLE_CRAN_RESPONSE)
@@ -263,7 +263,7 @@ class TestEdgeCases:
         assert result is not None
         assert result.versions is None
 
-    @patch("mf.packages.registries.cran._fetch_json")
+    @patch("mf.packages.registries.cran.fetch_json")
     def test_crandb_url_constructed_correctly(self, mock_fetch):
         """The crandb URL includes the package name."""
         mock_fetch.return_value = None

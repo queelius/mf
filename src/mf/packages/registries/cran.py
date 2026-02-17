@@ -5,33 +5,12 @@ Fetches R package metadata from the crandb API (https://crandb.r-pkg.org).
 
 from __future__ import annotations
 
-import json
 import logging
-import urllib.request
 from datetime import datetime
 
-from mf.packages.registries import PackageMetadata
+from mf.packages.registries import PackageMetadata, fetch_json
 
 logger = logging.getLogger(__name__)
-
-
-def _fetch_json(url: str, timeout: int = 10) -> dict | None:
-    """Fetch JSON data from a URL.
-
-    Args:
-        url: URL to fetch.
-        timeout: Request timeout in seconds.
-
-    Returns:
-        Parsed JSON dict, or None on any error.
-    """
-    try:
-        req = urllib.request.Request(url, headers={"Accept": "application/json"})
-        with urllib.request.urlopen(req, timeout=timeout) as response:
-            return json.loads(response.read().decode("utf-8"))
-    except Exception:
-        logger.debug("Failed to fetch %s", url, exc_info=True)
-        return None
 
 
 def _clean_license(license_str: str | None) -> str | None:
@@ -64,7 +43,7 @@ class CRANAdapter:
         Returns:
             PackageMetadata if the package exists, None otherwise.
         """
-        data = _fetch_json(f"https://crandb.r-pkg.org/{package_name}")
+        data = fetch_json(f"https://crandb.r-pkg.org/{package_name}")
         if data is None:
             return None
 
