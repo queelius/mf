@@ -121,6 +121,7 @@ from mf.posts.commands import posts  # noqa: E402
 from mf.series.commands import series  # noqa: E402
 from mf.taxonomy.commands import taxonomy  # noqa: E402
 from mf.health.commands import health  # noqa: E402
+from mf.packages.commands import packages  # noqa: E402
 
 main.add_command(papers)
 main.add_command(posts)
@@ -135,6 +136,7 @@ main.add_command(analytics)
 main.add_command(integrity)
 main.add_command(taxonomy)
 main.add_command(health)
+main.add_command(packages)
 
 
 if __name__ == "__main__":
