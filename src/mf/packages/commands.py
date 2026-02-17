@@ -15,6 +15,34 @@ from rich.table import Table
 console = Console()
 
 
+def _get_dry_run(ctx: Any) -> bool:
+    """Extract dry_run flag from Click context, defaulting to False."""
+    return ctx.dry_run if ctx else False
+
+
+def _build_metadata_updates(metadata: Any) -> dict[str, Any]:
+    """Build a dict of metadata fields to merge from a PackageMetadata.
+
+    Shared between ``add`` and ``sync`` commands.
+    """
+    from datetime import datetime
+
+    updates: dict[str, Any] = {
+        "description": metadata.description,
+        "latest_version": metadata.latest_version,
+        "last_synced": datetime.now().isoformat(timespec="seconds"),
+    }
+    if metadata.install_command:
+        updates["install_command"] = metadata.install_command
+    if metadata.registry_url:
+        updates["registry_url"] = metadata.registry_url
+    if metadata.license:
+        updates["license"] = metadata.license
+    if metadata.downloads is not None:
+        updates["downloads"] = metadata.downloads
+    return updates
+
+
 @click.group(name="packages")
 def packages() -> None:
     """Manage packages from PyPI, CRAN, and other registries.
@@ -50,7 +78,7 @@ def list_packages(
         query=query,
         tags=list(tag) if tag else None,
         registry=registry,
-        featured=True if featured else None,
+        featured=featured or None,
     )
 
     if as_json:
@@ -151,7 +179,7 @@ def add(ctx: Any, name: str, registry: str, project: str | None, no_sync: bool) 
     """
     from mf.packages.database import PackageDatabase
 
-    dry_run = ctx.dry_run if ctx else False
+    dry_run = _get_dry_run(ctx)
 
     db = PackageDatabase()
     db.load()
@@ -162,9 +190,12 @@ def add(ctx: Any, name: str, registry: str, project: str | None, no_sync: bool) 
         return
 
     # Build initial entry data
+    from datetime import date
+
     entry_data: dict[str, Any] = {
         "name": name,
         "registry": registry,
+        "date_added": date.today().isoformat(),
     }
     if project:
         entry_data["project"] = project
@@ -180,20 +211,7 @@ def add(ctx: Any, name: str, registry: str, project: str | None, no_sync: bool) 
             try:
                 metadata = adapter.fetch_metadata(name)
                 if metadata:
-                    # Merge registry metadata into entry
-                    entry_data["description"] = metadata.description
-                    entry_data["latest_version"] = metadata.latest_version
-                    if metadata.install_command:
-                        entry_data["install_command"] = metadata.install_command
-                    if metadata.registry_url:
-                        entry_data["registry_url"] = metadata.registry_url
-                    if metadata.license:
-                        entry_data["license"] = metadata.license
-                    if metadata.downloads is not None:
-                        entry_data["downloads"] = metadata.downloads
-
-                    from datetime import datetime
-                    entry_data["last_synced"] = datetime.now().isoformat(timespec="seconds")
+                    entry_data.update(_build_metadata_updates(metadata))
                     console.print(f"[green]Fetched metadata for {name}[/green]")
                 else:
                     console.print(f"[yellow]Package not found on {registry}: {name}[/yellow]")
@@ -225,7 +243,7 @@ def remove(ctx: Any, name: str, yes: bool) -> None:
     """
     from mf.packages.database import PackageDatabase
 
-    dry_run = ctx.dry_run if ctx else False
+    dry_run = _get_dry_run(ctx)
 
     db = PackageDatabase()
     db.load()
@@ -260,12 +278,10 @@ def sync(ctx: Any, name: str | None) -> None:
         mf packages sync requests
         mf packages sync
     """
-    from datetime import datetime
-
     from mf.packages.database import PackageDatabase
     from mf.packages.registries import discover_registries
 
-    dry_run = ctx.dry_run if ctx else False
+    dry_run = _get_dry_run(ctx)
 
     db = PackageDatabase()
     db.load()
@@ -306,9 +322,10 @@ def sync(ctx: Any, name: str | None) -> None:
             metadata = adapter.fetch_metadata(entry.name)
             if metadata:
                 old_version = entry.latest_version
+                version_changed = old_version != metadata.latest_version
 
                 if dry_run:
-                    if old_version != metadata.latest_version:
+                    if version_changed:
                         console.print(
                             f"    [dim]Would update: {old_version} -> {metadata.latest_version}[/dim]"
                         )
@@ -317,21 +334,9 @@ def sync(ctx: Any, name: str | None) -> None:
                     synced += 1
                     continue
 
-                entry.update(
-                    description=metadata.description,
-                    latest_version=metadata.latest_version,
-                )
-                if metadata.install_command:
-                    entry.update(install_command=metadata.install_command)
-                if metadata.registry_url:
-                    entry.update(registry_url=metadata.registry_url)
-                if metadata.license:
-                    entry.update(license=metadata.license)
-                if metadata.downloads is not None:
-                    entry.update(downloads=metadata.downloads)
-                entry.update(last_synced=datetime.now().isoformat(timespec="seconds"))
+                entry.update(**_build_metadata_updates(metadata))
 
-                if old_version != metadata.latest_version:
+                if version_changed:
                     console.print(
                         f"    [green]Updated:[/green] {old_version} -> {metadata.latest_version}"
                     )
@@ -370,7 +375,7 @@ def generate(ctx: Any, name: str | None) -> None:
     from mf.packages.database import PackageDatabase
     from mf.packages.generator import generate_all_packages, generate_package_content
 
-    dry_run = ctx.dry_run if ctx else False
+    dry_run = _get_dry_run(ctx)
 
     db = PackageDatabase()
     db.load()
@@ -443,7 +448,7 @@ def set_field_cmd(ctx: Any, name: str, field: str, value: str) -> None:
     from mf.packages.database import PackageDatabase
     from mf.packages.field_ops import PACKAGES_SCHEMA, set_package_field, validate_package_field
 
-    dry_run = ctx.dry_run if ctx else False
+    dry_run = _get_dry_run(ctx)
 
     top, sub = parse_field_path(field)
     schema = PACKAGES_SCHEMA.get(top)
@@ -496,7 +501,7 @@ def unset_field_cmd(ctx: Any, name: str, field: str) -> None:
     from mf.packages.database import PackageDatabase
     from mf.packages.field_ops import PACKAGES_SCHEMA, unset_package_field
 
-    dry_run = ctx.dry_run if ctx else False
+    dry_run = _get_dry_run(ctx)
 
     top, _sub = parse_field_path(field)
     if top not in PACKAGES_SCHEMA:
@@ -542,7 +547,7 @@ def feature(ctx: Any, name: str, off: bool) -> None:
     from mf.packages.database import PackageDatabase
     from mf.packages.field_ops import set_package_field
 
-    dry_run = ctx.dry_run if ctx else False
+    dry_run = _get_dry_run(ctx)
 
     db = PackageDatabase()
     db.load()
@@ -577,7 +582,7 @@ def tag(ctx: Any, name: str, add_tags: tuple[str, ...], remove_tags: tuple[str, 
     from mf.packages.database import PackageDatabase
     from mf.packages.field_ops import modify_package_list_field
 
-    dry_run = ctx.dry_run if ctx else False
+    dry_run = _get_dry_run(ctx)
 
     if not add_tags and not remove_tags and set_tags is None:
         console.print("[red]Specify --add, --remove, or --set[/red]")

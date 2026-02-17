@@ -107,7 +107,7 @@ class PackageDatabase:
             "license": "MIT",
             "downloads": 10000,
             "last_synced": "2026-01-01T12:00:00",
-            "stars": 42,
+            "stars": 5,
         },
     }
 
@@ -231,9 +231,7 @@ class PackageDatabase:
     def items(self) -> Iterator[tuple[str, PackageEntry]]:
         """Iterate over (slug, entry) pairs."""
         for slug in self:
-            entry = self.get(slug)
-            if entry:
-                yield slug, entry
+            yield slug, PackageEntry(slug=slug, data=self._data[slug])
 
     def search(
         self,
@@ -254,18 +252,16 @@ class PackageDatabase:
             List of matching PackageEntry objects
         """
         results = []
+        query_lower = query.lower() if query else None
 
         for slug in self:
-            entry = self.get(slug)
-            if not entry:
-                continue
+            entry = PackageEntry(slug=slug, data=self._data[slug])
 
             # Text search
-            if query:
-                query_lower = query.lower()
-                name = entry.name.lower()
-                desc = (entry.description or "").lower()
-                if query_lower not in name and query_lower not in desc:
+            if query_lower:
+                name_lower = entry.name.lower()
+                desc_lower = (entry.description or "").lower()
+                if query_lower not in name_lower and query_lower not in desc_lower:
                     continue
 
             # Tags filter
@@ -303,15 +299,8 @@ class PackageDatabase:
 
     def stats(self) -> dict[str, Any]:
         """Get database statistics."""
-        total = len(self)
-        featured = 0
-
-        for _slug, entry in self.items():
-            if entry.featured:
-                featured += 1
-
         return {
-            "total": total,
-            "featured": featured,
+            "total": len(self),
+            "featured": sum(1 for _, entry in self.items() if entry.featured),
             "registries": self.list_registries(),
         }

@@ -10,7 +10,7 @@ import importlib.util
 import json
 import logging
 import urllib.request
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Protocol, runtime_checkable
@@ -107,18 +107,16 @@ def _load_adapter_from_file(filepath: Path) -> RegistryAdapter | None:
             logger.debug("No 'adapter' attribute in %s", filepath)
             return None
 
-        if not hasattr(adapter, "name") or not hasattr(adapter, "fetch_metadata"):
+        if not isinstance(adapter, RegistryAdapter) or not callable(
+            adapter.fetch_metadata
+        ):
             logger.debug(
-                "Adapter in %s missing 'name' or 'fetch_metadata' attribute",
+                "Adapter in %s does not satisfy RegistryAdapter protocol",
                 filepath,
             )
             return None
 
-        if not callable(adapter.fetch_metadata):
-            logger.debug("adapter.fetch_metadata in %s is not callable", filepath)
-            return None
-
-        return adapter  # type: ignore[return-value]
+        return adapter
 
     except Exception:
         logger.debug("Failed to load adapter from %s", filepath, exc_info=True)

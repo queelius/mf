@@ -83,9 +83,8 @@ def test_frontmatter_fields(mock_site_root, pkg_db):
 def test_dry_run_no_file(mock_site_root, pkg_db):
     """Dry run should not create any files."""
     entry = pkg_db.get("alpha-pkg")
-    result = generate_package_content("alpha-pkg", entry, dry_run=True)
+    generate_package_content("alpha-pkg", entry, dry_run=True)
 
-    assert result is True
     content_file = mock_site_root / "content" / "packages" / "alpha-pkg" / "index.md"
     assert not content_file.exists()
 
@@ -142,6 +141,119 @@ def test_optional_fields_omitted(mock_site_root, pkg_db):
     # But it does have fields that are set
     assert 'registry: "cran"' in text
     assert 'description: "Beta package for CRAN"' in text
+
+
+def test_date_uses_date_added_from_entry(mock_site_root):
+    """Generator should use date_added from DB entry, not today's date."""
+    import json as json_module
+
+    db_path = mock_site_root / ".mf" / "packages_db.json"
+    data = {
+        "_comment": "test",
+        "_schema_version": "1.0",
+        "dated-pkg": {
+            "name": "dated-pkg",
+            "registry": "pypi",
+            "date_added": "2025-06-15",
+        },
+    }
+    db_path.write_text(json_module.dumps(data, indent=2))
+    db = PackageDatabase(db_path)
+    db.load()
+
+    entry = db.get("dated-pkg")
+    generate_package_content("dated-pkg", entry)
+
+    text = (mock_site_root / "content" / "packages" / "dated-pkg" / "index.md").read_text()
+    assert "date: 2025-06-15" in text
+
+
+def test_date_falls_back_to_today_when_no_date_added(mock_site_root):
+    """When no date_added in entry, generator falls back to today's date."""
+    from datetime import date
+
+    import json as json_module
+
+    db_path = mock_site_root / ".mf" / "packages_db.json"
+    data = {
+        "_comment": "test",
+        "_schema_version": "1.0",
+        "no-date-pkg": {
+            "name": "no-date-pkg",
+            "registry": "pypi",
+        },
+    }
+    db_path.write_text(json_module.dumps(data, indent=2))
+    db = PackageDatabase(db_path)
+    db.load()
+
+    entry = db.get("no-date-pkg")
+    generate_package_content("no-date-pkg", entry)
+
+    text = (mock_site_root / "content" / "packages" / "no-date-pkg" / "index.md").read_text()
+    assert f"date: {date.today().isoformat()}" in text
+
+
+def test_yaml_escaping_quotes_in_fields(mock_site_root):
+    """Double quotes in field values must be escaped in YAML frontmatter."""
+    import json as json_module
+
+    db_path = mock_site_root / ".mf" / "packages_db.json"
+    data = {
+        "_comment": "test",
+        "_schema_version": "1.0",
+        "tricky-pkg": {
+            "name": 'my "great" pkg',
+            "registry": "pypi",
+            "description": 'A "wonderful" package',
+            "latest_version": "1.0.0",
+            "install_command": 'pip install "tricky-pkg"',
+            "license": 'MIT "Expat"',
+            "tags": ['"air-quotes"'],
+        },
+    }
+    db_path.write_text(json_module.dumps(data, indent=2))
+    db = PackageDatabase(db_path)
+    db.load()
+
+    entry = db.get("tricky-pkg")
+    generate_package_content("tricky-pkg", entry)
+
+    text = (mock_site_root / "content" / "packages" / "tricky-pkg" / "index.md").read_text()
+
+    # Verify the YAML is well-formed by checking escaped quotes
+    assert r'title: "my \"great\" pkg"' in text
+    assert r'install_command: "pip install \"tricky-pkg\""' in text
+    assert r'license: "MIT \"Expat\""' in text
+    assert r'description: "A \"wonderful\" package"' in text
+    # Tags should also have escaped quotes
+    assert r'"\"air-quotes\""' in text
+
+
+def test_yaml_escaping_newlines_in_name(mock_site_root):
+    """Newlines in field values must be stripped in YAML frontmatter."""
+    import json as json_module
+
+    db_path = mock_site_root / ".mf" / "packages_db.json"
+    data = {
+        "_comment": "test",
+        "_schema_version": "1.0",
+        "newline-pkg": {
+            "name": "line1\nline2",
+            "registry": "pypi",
+            "latest_version": "1.0.0",
+        },
+    }
+    db_path.write_text(json_module.dumps(data, indent=2))
+    db = PackageDatabase(db_path)
+    db.load()
+
+    entry = db.get("newline-pkg")
+    generate_package_content("newline-pkg", entry)
+
+    text = (mock_site_root / "content" / "packages" / "newline-pkg" / "index.md").read_text()
+    # Newline should be replaced with space
+    assert 'title: "line1 line2"' in text
 
 
 def test_generate_all_handles_exception(mock_site_root, pkg_db):
