@@ -11,6 +11,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 **Core Identity:** External source → Hugo content synchronization
 - Papers: LaTeX source files → Hugo paper pages
 - Projects: GitHub repos → Hugo project pages
+- Packages: Registry metadata (PyPI, CRAN) → Hugo package pages
 - Series: External source repos → Hugo series landing pages
 - Posts: Direct front matter management (no database)
 
@@ -23,7 +24,7 @@ pip install -e ".[dev]"     # With dev dependencies
 pip install -e ".[all]"     # With PDF support and dev tools
 
 # Run tests
-pytest                       # All tests (1113 tests)
+pytest                       # All tests (1271 tests)
 pytest tests/test_core/      # Specific directory
 pytest -k "test_backup"      # Tests matching pattern
 pytest --cov=mf --cov-report=html  # With coverage
@@ -42,6 +43,7 @@ ruff check src/mf
 | `papers/` | LaTeX paper processing and Hugo content generation | `paper_db.json` |
 | `projects/` | GitHub project import, refresh, and content generation | `projects_db.json` |
 | `series/` | Content series management and sync with external repos | `series_db.json` |
+| `packages/` | Package registry management and Hugo content generation | `packages_db.json` |
 | `posts/` | Blog post front matter management | No (reads Hugo files directly) |
 | `publications/` | Peer-reviewed subset of papers | Uses `paper_db.json` |
 | `content/` | Cross-content operations (linking, auditing, scanning) | No |
@@ -61,6 +63,7 @@ Entry point using Click. All command groups registered at module level via `main
 - `mf papers` — generate, sync, process, set/unset, feature, tag, zenodo, fetch-cff, stats, show, list
 - `mf projects` — import, refresh, sync, generate, clean, set/unset, feature, hide, tag, fetch-codemeta, make-rich, stats, show, list
 - `mf series` — list, show, stats, sync, create, delete, add/remove, set/unset, feature, tag
+- `mf packages` — list, show, add, remove, sync, generate, set/unset, feature, tag, fields, stats
 - `mf pubs` — generate, sync, list
 
 **Content operations (no database):**
@@ -81,9 +84,9 @@ Global options: `--verbose`, `--dry-run`
 ### Core Layer (`src/mf/core/`)
 
 - `config.py` — 3-tier site root resolution: `MF_SITE_ROOT` env → walk-up for `.mf/` → global config (`~/.config/mf/config.yaml`). Path management via `SitePaths` dataclass. The global config allows `mf` to work from any directory.
-- `database.py` — Database classes: `PaperDatabase`, `ProjectsDatabase`, `ProjectsCache`, `SeriesDatabase`
+- `database.py` — Database classes: `PaperDatabase`, `ProjectsDatabase`, `ProjectsCache`, `SeriesDatabase`, `PackageDatabase`
 - `backup.py` — Atomic JSON writes with timestamped backups and rotation
-- `field_ops.py` — Generic field schema (`FieldDef`, `FieldType`), coercion, validation, and change tracking (`ChangeResult`). Uses `FieldDatabase` protocol. Domain-specific schemas in `papers/field_ops.py`, `projects/field_ops.py`, `series/field_ops.py`.
+- `field_ops.py` — Generic field schema (`FieldDef`, `FieldType`), coercion, validation, and change tracking (`ChangeResult`). Uses `FieldDatabase` protocol. Domain-specific schemas in `papers/field_ops.py`, `projects/field_ops.py`, `series/field_ops.py`, `packages/field_ops.py`.
 - `integrity.py` — Cross-database validation and consistency checks
 - `crypto.py` — Hash utilities for source file tracking
 - `prompts.py` — Interactive prompts
@@ -95,9 +98,9 @@ Global options: `--verbose`, `--dry-run`
 - `load()` / `save()` with automatic backup creation
 - `get()`, `set()`, `update()`, `delete()` operations
 - `search()` with filters (query, tags, category, etc.)
-- Entry dataclasses (`PaperEntry`) with property accessors
+- Entry dataclasses (`PaperEntry`, `PackageEntry`) with property accessors
 
-**Field operations pattern:** `set`/`unset`/`feature`/`tag` commands share generic infrastructure from `core/field_ops.py`. Each domain (papers, projects, series) defines its own `FIELD_SCHEMA` dict mapping field names to `FieldDef` objects. Common flags: `--regenerate` triggers content regeneration after change, `--off` reverses toggles.
+**Field operations pattern:** `set`/`unset`/`feature`/`tag` commands share generic infrastructure from `core/field_ops.py`. Each domain (papers, projects, series, packages) defines its own `FIELD_SCHEMA` dict mapping field names to `FieldDef` objects. Common flags: `--regenerate` triggers content regeneration after change, `--off` reverses toggles.
 
 **Posts are database-free:** Unlike papers/projects/series, `mf posts` reads and writes Hugo front matter directly via `ContentScanner` and `FrontMatterEditor`. No `.mf/*.json` involved.
 
@@ -119,6 +122,7 @@ All paths derived from site root via `get_paths()` → `SitePaths` dataclass.
   paper_db.json           # Paper metadata
   projects_db.json        # Project overrides
   series_db.json          # Series metadata
+  packages_db.json        # Package registry metadata
   config.yaml             # mf configuration
   cache/
     projects.json         # GitHub API cache (gitignored)
@@ -126,6 +130,8 @@ All paths derived from site root via `get_paths()` → `SitePaths` dataclass.
     papers/               # Paper database backups
     projects/             # Projects database backups
     series/               # Series database backups
+    packages/             # Package database backups
+  registries/             # User-provided registry adapter overrides
 ```
 
 ## Content Generation Workflow
@@ -156,7 +162,7 @@ Tests use `tmp_path` fixture for isolation. Key fixtures in `tests/conftest.py`:
 - `sample_paper_db`, `sample_projects_db` — Pre-populated test databases
 - `mock_site_root` — Creates mock Hugo site structure and sets `MF_SITE_ROOT`
 
-Test directories mirror source: `tests/test_papers/`, `tests/test_projects/`, `tests/test_series/`, `tests/test_posts/`, `tests/test_taxonomy/`, `tests/test_health/`, `tests/test_core/`, `tests/test_publications/`, `tests/test_analytics/`, etc.
+Test directories mirror source: `tests/test_papers/`, `tests/test_projects/`, `tests/test_series/`, `tests/test_packages/`, `tests/test_posts/`, `tests/test_taxonomy/`, `tests/test_health/`, `tests/test_core/`, `tests/test_publications/`, `tests/test_analytics/`, etc.
 
 ## Tool Orchestration
 
