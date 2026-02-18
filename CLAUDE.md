@@ -49,13 +49,12 @@ Test config is in `pyproject.toml` under `[tool.pytest.ini_options]` — `testpa
 | `core/` | Config, database base, backup, field ops, integrity | Infrastructure |
 | `backup/` | Backup management CLI | None |
 | `config/` | Config management CLI | None |
-| `claude/` | Claude Code skill generation/installation | None |
 
 ### CLI Entry Point (`src/mf/cli.py`)
 
 Click-based CLI. The `main` group accepts `--verbose`/`--dry-run` as global options, stored in a `Context` object passed via `@click.pass_obj`. Command groups are registered via `main.add_command()` at module level.
 
-Command groups: `papers`, `projects`, `series`, `packages`, `pubs`, `posts`, `content`, `taxonomy`, `health`, `analytics`, `integrity`, `backup`, `config`, `claude`.
+Command groups: `papers`, `projects`, `series`, `packages`, `pubs`, `posts`, `content`, `taxonomy`, `health`, `analytics`, `integrity`, `backup`, `config`.
 
 ### Core Layer (`src/mf/core/`)
 

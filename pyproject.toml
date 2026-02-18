@@ -62,11 +62,9 @@ packages = ["src/mf"]
 [tool.hatch.build.targets.wheel.sources]
 "src" = ""
 
-# Include markdown files in claude/data/
 [tool.hatch.build]
 include = [
     "src/mf/**/*.py",
-    "src/mf/claude/data/*.md",
 ]
 
 [tool.pytest.ini_options]

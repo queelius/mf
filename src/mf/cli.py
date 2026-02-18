@@ -110,18 +110,17 @@ def init(ctx, force: bool) -> None:
 # Import and register command groups (imports after main definition intentional)
 from mf.analytics.commands import analytics  # noqa: E402
 from mf.backup.commands import backup  # noqa: E402
-from mf.claude.commands import claude  # noqa: E402
 from mf.config.commands import config  # noqa: E402
 from mf.content.commands import content  # noqa: E402
 from mf.core.integrity_commands import integrity  # noqa: E402
-from mf.papers.commands import papers  # noqa: E402
-from mf.projects.commands import projects  # noqa: E402
-from mf.publications.commands import pubs  # noqa: E402
-from mf.posts.commands import posts  # noqa: E402
-from mf.series.commands import series  # noqa: E402
-from mf.taxonomy.commands import taxonomy  # noqa: E402
 from mf.health.commands import health  # noqa: E402
 from mf.packages.commands import packages  # noqa: E402
+from mf.papers.commands import papers  # noqa: E402
+from mf.posts.commands import posts  # noqa: E402
+from mf.projects.commands import projects  # noqa: E402
+from mf.publications.commands import pubs  # noqa: E402
+from mf.series.commands import series  # noqa: E402
+from mf.taxonomy.commands import taxonomy  # noqa: E402
 
 main.add_command(papers)
 main.add_command(posts)
@@ -130,7 +129,6 @@ main.add_command(pubs)
 main.add_command(backup)
 main.add_command(config)
 main.add_command(content)
-main.add_command(claude)
 main.add_command(series)
 main.add_command(analytics)
 main.add_command(integrity)
