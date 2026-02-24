@@ -655,7 +655,8 @@ def _get_posts_in_series(slug: str) -> list[dict]:
 @click.option("--delete", is_flag=True, help="Delete posts removed from source")
 @click.option("--dry-run", is_flag=True, help="Preview changes without syncing")
 @click.option("-v", "--verbose", is_flag=True, help="Show all posts, not just changes")
-@click.option("--diff", "show_diff", is_flag=True, help="Show diff for conflicted posts")
+@click.option("--diff", "show_diff", is_flag=True, help="Show full diff for conflicts and landing page")
+@click.option("--summary", is_flag=True, help="Show compact diffstat (+N -M lines) for changes")
 @click.option("--ours", "resolve_ours", is_flag=True, help="Resolve conflicts by keeping metafunctor version")
 @click.option("--theirs", "resolve_theirs", is_flag=True, help="Resolve conflicts by taking source version")
 @click.option("--interactive", "interactive", is_flag=True, help="Prompt for each conflict")
@@ -670,6 +671,7 @@ def sync(
     dry_run: bool,
     verbose: bool,
     show_diff: bool,
+    summary: bool,
     resolve_ours: bool,
     resolve_theirs: bool,
     interactive: bool,
@@ -775,7 +777,7 @@ def sync(
             plan = plan_pull_sync(entry, include_landing, include_posts)
 
         # Print plan
-        print_sync_plan(plan, verbose, show_diff=show_diff)
+        print_sync_plan(plan, verbose, show_diff=show_diff, summary=summary)
 
         if plan.errors:
             continue

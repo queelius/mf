@@ -761,6 +761,23 @@ Line C
         assert "-Line B" in diff_text or "+Line C" in diff_text
 
 
+class TestGenerateDiffPlainFiles:
+    """Tests for generate_diff with plain files (not directories)."""
+
+    def test_generate_diff_plain_files(self, tmp_path):
+        """generate_diff should work on plain files for landing pages."""
+        source = tmp_path / "source.md"
+        target = tmp_path / "target.md"
+
+        source.write_text("# Title\nOriginal line\n")
+        target.write_text("# Title\nModified line\nNew line\n")
+
+        diff_lines = generate_diff(source, target)
+        diff_text = "\n".join(diff_lines)
+        assert "-Original line" in diff_text
+        assert "+Modified line" in diff_text
+
+
 class TestDiffstat:
     """Tests for generate_diffstat -- one-line change summaries."""
 
@@ -823,17 +840,9 @@ class TestDiffstat:
 
 
 class TestPrintSyncPlanDiffstat:
-    """Tests that print_sync_plan shows diffstats for conflicts and updates."""
+    """Tests that print_sync_plan shows diffstats only with summary=True."""
 
-    def test_conflict_row_shows_diffstat(self, tmp_path):
-        """Conflicted posts with both paths should show +N -M lines in output."""
-        from io import StringIO
-
-        from rich.console import Console as RichConsole
-
-        from mf.series.syncer import print_sync_plan
-
-        # Create divergent source and target
+    def _make_post_plan(self, tmp_path):
         source = tmp_path / "source-post"
         source.mkdir()
         (source / "index.md").write_text("---\ntitle: A\n---\nOriginal\n")
@@ -842,7 +851,7 @@ class TestPrintSyncPlanDiffstat:
         target.mkdir()
         (target / "index.md").write_text("---\ntitle: B\n---\nChanged\nExtra line\n")
 
-        plan = SyncPlan(
+        return SyncPlan(
             series_slug="test",
             direction="pull",
             posts=[
@@ -856,28 +865,14 @@ class TestPrintSyncPlanDiffstat:
             ],
         )
 
-        buf = StringIO()
-        with patch("mf.series.syncer.console", RichConsole(file=buf, force_terminal=False, width=200)):
-            print_sync_plan(plan)
-
-        output = buf.getvalue()
-        assert "+" in output and "-" in output and "lines" in output
-
-    def test_landing_page_shows_diffstat(self, tmp_path):
-        """Landing page update should show diffstat in output."""
-        from io import StringIO
-
-        from rich.console import Console as RichConsole
-
-        from mf.series.syncer import print_sync_plan
-
+    def _make_landing_plan(self, tmp_path):
         source_lp = tmp_path / "source_landing.md"
         source_lp.write_text("# Landing\nOriginal content\n")
 
         target_lp = tmp_path / "target_landing.md"
         target_lp.write_text("# Landing\nUpdated content\nNew section\n")
 
-        plan = SyncPlan(
+        return SyncPlan(
             series_slug="test",
             direction="pull",
             posts=[],
@@ -890,12 +885,74 @@ class TestPrintSyncPlanDiffstat:
             ),
         )
 
+    def test_conflict_row_shows_diffstat_with_summary(self, tmp_path):
+        """Conflicted posts show +N -M lines when summary=True."""
+        from io import StringIO
+
+        from rich.console import Console as RichConsole
+
+        from mf.series.syncer import print_sync_plan
+
+        plan = self._make_post_plan(tmp_path)
+
+        buf = StringIO()
+        with patch("mf.series.syncer.console", RichConsole(file=buf, force_terminal=False, width=200)):
+            print_sync_plan(plan, summary=True)
+
+        output = buf.getvalue()
+        assert "+" in output and "-" in output and "lines" in output
+
+    def test_conflict_row_no_diffstat_by_default(self, tmp_path):
+        """Conflicted posts do NOT show diffstat without summary flag."""
+        from io import StringIO
+
+        from rich.console import Console as RichConsole
+
+        from mf.series.syncer import print_sync_plan
+
+        plan = self._make_post_plan(tmp_path)
+
         buf = StringIO()
         with patch("mf.series.syncer.console", RichConsole(file=buf, force_terminal=False, width=200)):
             print_sync_plan(plan)
 
         output = buf.getvalue()
+        assert "lines" not in output
+
+    def test_landing_page_shows_diffstat_with_summary(self, tmp_path):
+        """Landing page update shows diffstat when summary=True."""
+        from io import StringIO
+
+        from rich.console import Console as RichConsole
+
+        from mf.series.syncer import print_sync_plan
+
+        plan = self._make_landing_plan(tmp_path)
+
+        buf = StringIO()
+        with patch("mf.series.syncer.console", RichConsole(file=buf, force_terminal=False, width=200)):
+            print_sync_plan(plan, summary=True)
+
+        output = buf.getvalue()
         assert "+" in output and "-" in output and "lines" in output
+
+    def test_landing_page_diff_with_show_diff(self, tmp_path):
+        """Landing page shows full unified diff when show_diff=True."""
+        from io import StringIO
+
+        from rich.console import Console as RichConsole
+
+        from mf.series.syncer import print_sync_plan
+
+        plan = self._make_landing_plan(tmp_path)
+
+        buf = StringIO()
+        with patch("mf.series.syncer.console", RichConsole(file=buf, force_terminal=False, width=200)):
+            print_sync_plan(plan, show_diff=True)
+
+        output = buf.getvalue()
+        assert "Original content" in output or "-Original content" in output
+        assert "Updated content" in output or "+Updated content" in output
 
 
 class TestSyncPlanConflicts:
