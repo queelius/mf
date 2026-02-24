@@ -20,6 +20,7 @@ from mf.series.syncer import (
     list_syncable_series,
     compute_post_hash,
     generate_diff,
+    generate_diffstat,
     ConflictResolution,
     strip_date_prefix,
     _detect_renames,
@@ -758,6 +759,143 @@ Line C
         diff_text = "\n".join(diff_lines)
         assert "Source Title" in diff_text or "Target Title" in diff_text
         assert "-Line B" in diff_text or "+Line C" in diff_text
+
+
+class TestDiffstat:
+    """Tests for generate_diffstat -- one-line change summaries."""
+
+    def test_diffstat_shows_added_and_removed(self, series_with_source):
+        """Diffstat counts added and removed lines."""
+        source_dir = series_with_source["source_dir"]
+        site_root = series_with_source["site_root"]
+
+        source_post = source_dir / "post" / "2024-01-01-test-post"
+        target_post = site_root / "content" / "post" / "2024-01-01-test-post"
+        target_post.mkdir(parents=True, exist_ok=True)
+
+        (source_post / "index.md").write_text("---\ntitle: A\n---\nLine 1\nLine 2\n")
+        (target_post / "index.md").write_text("---\ntitle: B\n---\nLine 1\nLine 3\nLine 4\n")
+
+        result = generate_diffstat(source_post, target_post)
+        # source→target: title A→B (-1+1), Line 2→Line 3 + Line 4 (-1+2)
+        # total: some adds, some removes
+        assert "+" in result
+        assert "-" in result
+        assert "lines" in result
+
+    def test_diffstat_identical_files(self, series_with_source):
+        """Identical files produce empty diffstat."""
+        source_dir = series_with_source["source_dir"]
+        site_root = series_with_source["site_root"]
+
+        source_post = source_dir / "post" / "2024-01-01-test-post"
+        target_post = site_root / "content" / "post" / "2024-01-01-test-post"
+        target_post.mkdir(parents=True, exist_ok=True)
+
+        (source_post / "index.md").write_text("---\ntitle: Same\n---\nContent\n")
+        (target_post / "index.md").write_text("---\ntitle: Same\n---\nContent\n")
+
+        result = generate_diffstat(source_post, target_post)
+        assert result == ""
+
+    def test_diffstat_missing_source(self, tmp_path):
+        """Missing source file returns empty string."""
+        source = tmp_path / "missing"
+        target = tmp_path / "target"
+        target.mkdir()
+        (target / "index.md").write_text("content")
+
+        result = generate_diffstat(source, target)
+        assert result == ""
+
+    def test_diffstat_for_single_files(self, tmp_path):
+        """Diffstat works on plain files (for landing pages)."""
+        source = tmp_path / "source.md"
+        target = tmp_path / "target.md"
+
+        source.write_text("Line A\nLine B\n")
+        target.write_text("Line A\nLine C\nLine D\n")
+
+        result = generate_diffstat(source, target)
+        assert "+" in result
+        assert "-" in result
+        assert "lines" in result
+
+
+class TestPrintSyncPlanDiffstat:
+    """Tests that print_sync_plan shows diffstats for conflicts and updates."""
+
+    def test_conflict_row_shows_diffstat(self, tmp_path):
+        """Conflicted posts with both paths should show +N -M lines in output."""
+        from io import StringIO
+
+        from rich.console import Console as RichConsole
+
+        from mf.series.syncer import print_sync_plan
+
+        # Create divergent source and target
+        source = tmp_path / "source-post"
+        source.mkdir()
+        (source / "index.md").write_text("---\ntitle: A\n---\nOriginal\n")
+
+        target = tmp_path / "target-post"
+        target.mkdir()
+        (target / "index.md").write_text("---\ntitle: B\n---\nChanged\nExtra line\n")
+
+        plan = SyncPlan(
+            series_slug="test",
+            direction="pull",
+            posts=[
+                PostSyncItem(
+                    slug="my-post",
+                    action=SyncAction.CONFLICT,
+                    source_path=source,
+                    target_path=target,
+                    reason="both source and metafunctor modified",
+                ),
+            ],
+        )
+
+        buf = StringIO()
+        with patch("mf.series.syncer.console", RichConsole(file=buf, force_terminal=False, width=200)):
+            print_sync_plan(plan)
+
+        output = buf.getvalue()
+        assert "+" in output and "-" in output and "lines" in output
+
+    def test_landing_page_shows_diffstat(self, tmp_path):
+        """Landing page update should show diffstat in output."""
+        from io import StringIO
+
+        from rich.console import Console as RichConsole
+
+        from mf.series.syncer import print_sync_plan
+
+        source_lp = tmp_path / "source_landing.md"
+        source_lp.write_text("# Landing\nOriginal content\n")
+
+        target_lp = tmp_path / "target_landing.md"
+        target_lp.write_text("# Landing\nUpdated content\nNew section\n")
+
+        plan = SyncPlan(
+            series_slug="test",
+            direction="pull",
+            posts=[],
+            landing_page=PostSyncItem(
+                slug="_landing_page",
+                action=SyncAction.UPDATE,
+                source_path=source_lp,
+                target_path=target_lp,
+                reason="landing page modified",
+            ),
+        )
+
+        buf = StringIO()
+        with patch("mf.series.syncer.console", RichConsole(file=buf, force_terminal=False, width=200)):
+            print_sync_plan(plan)
+
+        output = buf.getvalue()
+        assert "+" in output and "-" in output and "lines" in output
 
 
 class TestSyncPlanConflicts:

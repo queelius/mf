@@ -815,10 +815,16 @@ def print_sync_plan(plan: SyncPlan, verbose: bool = False, show_diff: bool = Fal
             if item.action == SyncAction.RENAME and item.old_slug:
                 slug_display = f"{item.old_slug} -> {item.slug}"
 
+            reason = item.reason
+            if item.action in (SyncAction.CONFLICT, SyncAction.UPDATE) and item.source_path and item.target_path:
+                diffstat = generate_diffstat(item.source_path, item.target_path)
+                if diffstat:
+                    reason = f"{diffstat} ({reason})" if reason else diffstat
+
             table.add_row(
                 slug_display,
                 f"[{style}]{item.action.value}[/{style}]",
-                item.reason,
+                reason,
             )
 
         if table.row_count > 0:
@@ -833,7 +839,12 @@ def print_sync_plan(plan: SyncPlan, verbose: bool = False, show_diff: bool = Fal
         lp = plan.landing_page
         if lp.action != SyncAction.UNCHANGED or verbose:
             style = ACTION_STYLES.get(lp.action, "")
-            console.print(f"\n[cyan]Landing page:[/cyan] [{style}]{lp.action.value}[/{style}] - {lp.reason}")
+            reason = lp.reason
+            if lp.action in (SyncAction.CONFLICT, SyncAction.UPDATE) and lp.source_path and lp.target_path:
+                diffstat = generate_diffstat(lp.source_path, lp.target_path)
+                if diffstat:
+                    reason = f"{diffstat} ({reason})" if reason else diffstat
+            console.print(f"\n[cyan]Landing page:[/cyan] [{style}]{lp.action.value}[/{style}] - {reason}")
 
 
 def list_syncable_series(db: SeriesDatabase) -> list[SeriesEntry]:
@@ -846,6 +857,43 @@ def list_syncable_series(db: SeriesDatabase) -> list[SeriesEntry]:
         List of series entries with source configuration
     """
     return [entry for _, entry in db.items() if entry.has_source()]
+
+
+def generate_diffstat(source_path: Path, target_path: Path) -> str:
+    """Generate a compact diffstat string like ``+5 -2 lines``.
+
+    Works with both post directories (reads ``index.md`` inside) and plain
+    files (for landing pages).
+
+    Args:
+        source_path: Source post directory or file.
+        target_path: Target post directory or file.
+
+    Returns:
+        Diffstat string, or empty string if files are identical or missing.
+    """
+    # Resolve to actual files
+    source_file = source_path / "index.md" if source_path.is_dir() else source_path
+    target_file = target_path / "index.md" if target_path.is_dir() else target_path
+
+    if not source_file.exists() or not target_file.exists():
+        return ""
+
+    source_lines = source_file.read_text(encoding="utf-8").splitlines(keepends=True)
+    target_lines = target_file.read_text(encoding="utf-8").splitlines(keepends=True)
+
+    added = 0
+    removed = 0
+    for line in difflib.unified_diff(source_lines, target_lines):
+        if line.startswith("+") and not line.startswith("+++"):
+            added += 1
+        elif line.startswith("-") and not line.startswith("---"):
+            removed += 1
+
+    if added == 0 and removed == 0:
+        return ""
+
+    return f"+{added} -{removed} lines"
 
 
 def generate_diff(source_path: Path, target_path: Path) -> list[str]:
