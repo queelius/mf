@@ -776,6 +776,24 @@ class TestGenerateDiffPlainFiles:
         diff_text = "\n".join(diff_lines)
         assert "-Original line" in diff_text
         assert "+Modified line" in diff_text
+        # Plain file labels use filename directly
+        assert "source/source.md" in diff_lines[0]
+        assert "metafunctor/target.md" in diff_lines[1]
+
+    def test_generate_diff_directory_labels_include_slug(self, tmp_path):
+        """Directory-based diffs should include the post slug in labels."""
+        source = tmp_path / "2024-01-01-my-post"
+        source.mkdir()
+        (source / "index.md").write_text("old\n")
+
+        target = tmp_path / "2024-01-01-my-post-target"
+        target.mkdir()
+        (target / "index.md").write_text("new\n")
+
+        diff_lines = generate_diff(source, target)
+        # Labels should include the directory name (post slug), not just "index.md"
+        assert "source/2024-01-01-my-post/index.md" in diff_lines[0]
+        assert "metafunctor/2024-01-01-my-post-target/index.md" in diff_lines[1]
 
 
 class TestDiffstat:
@@ -928,6 +946,43 @@ class TestPrintSyncPlanDiffstat:
         from mf.series.syncer import print_sync_plan
 
         plan = self._make_landing_plan(tmp_path)
+
+        buf = StringIO()
+        with patch("mf.series.syncer.console", RichConsole(file=buf, force_terminal=False, width=200)):
+            print_sync_plan(plan, summary=True)
+
+        output = buf.getvalue()
+        assert "+" in output and "-" in output and "lines" in output
+
+    def test_update_row_shows_diffstat_with_summary(self, tmp_path):
+        """UPDATE posts also show diffstat when summary=True."""
+        from io import StringIO
+
+        from rich.console import Console as RichConsole
+
+        from mf.series.syncer import print_sync_plan
+
+        source = tmp_path / "source-post"
+        source.mkdir()
+        (source / "index.md").write_text("---\ntitle: A\n---\nLine 1\n")
+
+        target = tmp_path / "target-post"
+        target.mkdir()
+        (target / "index.md").write_text("---\ntitle: A\n---\nLine 1\nLine 2\n")
+
+        plan = SyncPlan(
+            series_slug="test",
+            direction="pull",
+            posts=[
+                PostSyncItem(
+                    slug="my-post",
+                    action=SyncAction.UPDATE,
+                    source_path=source,
+                    target_path=target,
+                    reason="source updated",
+                ),
+            ],
+        )
 
         buf = StringIO()
         with patch("mf.series.syncer.console", RichConsole(file=buf, force_terminal=False, width=200)):

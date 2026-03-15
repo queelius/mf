@@ -770,6 +770,16 @@ def copy_landing_page(source: Path, target: Path) -> None:
     shutil.copy2(source, target)
 
 
+def _augment_reason(item: PostSyncItem, summary: bool) -> str:
+    """Prepend diffstat to reason when summary is enabled and paths are available."""
+    reason = item.reason
+    if summary and item.action in (SyncAction.CONFLICT, SyncAction.UPDATE) and item.source_path and item.target_path:
+        diffstat = generate_diffstat(item.source_path, item.target_path)
+        if diffstat:
+            reason = f"{diffstat} ({reason})" if reason else diffstat
+    return reason
+
+
 def print_sync_plan(
     plan: SyncPlan,
     verbose: bool = False,
@@ -821,11 +831,7 @@ def print_sync_plan(
             if item.action == SyncAction.RENAME and item.old_slug:
                 slug_display = f"{item.old_slug} -> {item.slug}"
 
-            reason = item.reason
-            if summary and item.action in (SyncAction.CONFLICT, SyncAction.UPDATE) and item.source_path and item.target_path:
-                diffstat = generate_diffstat(item.source_path, item.target_path)
-                if diffstat:
-                    reason = f"{diffstat} ({reason})" if reason else diffstat
+            reason = _augment_reason(item, summary)
 
             table.add_row(
                 slug_display,
@@ -845,11 +851,7 @@ def print_sync_plan(
         lp = plan.landing_page
         if lp.action != SyncAction.UNCHANGED or verbose:
             style = ACTION_STYLES.get(lp.action, "")
-            reason = lp.reason
-            if summary and lp.action in (SyncAction.CONFLICT, SyncAction.UPDATE) and lp.source_path and lp.target_path:
-                diffstat = generate_diffstat(lp.source_path, lp.target_path)
-                if diffstat:
-                    reason = f"{diffstat} ({reason})" if reason else diffstat
+            reason = _augment_reason(lp, summary)
             console.print(f"\n[cyan]Landing page:[/cyan] [{style}]{lp.action.value}[/{style}] - {reason}")
 
             if show_diff and lp.action in (SyncAction.CONFLICT, SyncAction.UPDATE) and lp.source_path and lp.target_path:
@@ -931,8 +933,8 @@ def generate_diff(source_path: Path, target_path: Path) -> list[str]:
     return list(difflib.unified_diff(
         source_lines,
         target_lines,
-        fromfile=f"source/{source_file.name}",
-        tofile=f"metafunctor/{target_file.name}",
+        fromfile=f"source/{source_path.name}/index.md" if source_path.is_dir() else f"source/{source_file.name}",
+        tofile=f"metafunctor/{target_path.name}/index.md" if target_path.is_dir() else f"metafunctor/{target_file.name}",
         lineterm="",
     ))
 
