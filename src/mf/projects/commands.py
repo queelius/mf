@@ -162,7 +162,6 @@ def clean(ctx, user: str | None, include_private: bool, token: str | None, yes: 
 
 
 @projects.command()
-@click.option("--slug", help="Sync only a specific project (refresh only, skips clean/import)")
 @click.option("--user", help="GitHub username (uses config default if not set)")
 @click.option("--exclude-forks", is_flag=True, default=True, help="Exclude forked repositories")
 @click.option("--include-private", is_flag=True, help="Include private repositories")
@@ -170,13 +169,13 @@ def clean(ctx, user: str | None, include_private: bool, token: str | None, yes: 
 @click.option("-y", "--yes", is_flag=True, help="Skip confirmation prompts")
 @click.option("--prune", is_flag=True, help="Also remove orphaned overrides from projects_db.json")
 @click.pass_obj
-def sync(ctx, slug: str | None, user: str | None, exclude_forks: bool, include_private: bool, token: str | None, yes: bool, prune: bool) -> None:
+def sync(ctx, user: str | None, exclude_forks: bool, include_private: bool, token: str | None, yes: bool, prune: bool) -> None:
     """Full sync: clean stale, import new, refresh all.
 
     Combines clean, import, and refresh into one command.
     Honors manual overrides in projects_db.json.
 
-    With --slug, only refreshes that specific project (skips clean/import).
+    To refresh a single project, use: mf projects refresh --slug NAME
     """
     from mf.projects.importer import (
         clean_stale_projects,
@@ -185,11 +184,6 @@ def sync(ctx, slug: str | None, user: str | None, exclude_forks: bool, include_p
     )
 
     dry_run = _get_dry_run(ctx)
-
-    if slug:
-        console.print(f"[cyan]Syncing single project: {slug}[/cyan]")
-        refresh_projects(slug=slug, token=token, force=True, dry_run=dry_run)
-        return
 
     user = _resolve_user(user)
     if not user:
