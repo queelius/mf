@@ -21,6 +21,78 @@ from mf.core.prompts import confirm, prompt_user, select_from_list
 console = Console()
 
 
+from dataclasses import dataclass
+
+
+@dataclass
+class ArtifactPaths:
+    """Resolved artifact locations for a paper."""
+
+    html_dir: Path | None = None
+    pdf_path: Path | None = None
+
+
+def resolve_artifact_paths(entry: "PaperEntry") -> ArtifactPaths:
+    """Resolve artifact locations from source_path + format + overrides.
+
+    Convention for tex format:
+    - HTML: html_paper/ in same directory as .tex file
+    - PDF: {stem}.pdf in same directory as .tex file
+
+    Convention for pdf format:
+    - HTML: none
+    - PDF: the source file itself
+
+    Convention for pregenerated format:
+    - HTML: parent directory of source file
+    - PDF: first *.pdf found in that directory
+
+    Override fields (html_dir, pdf_file_source) in the DB entry take
+    precedence, resolved relative to source_path's parent directory.
+
+    Returns absolute paths. Returns None for artifacts that don't exist.
+    """
+    source_path = entry.source_path
+    if not source_path:
+        return ArtifactPaths()
+
+    parent = source_path.parent
+    fmt = entry.source_format
+
+    # Resolve HTML directory
+    html_dir: Path | None = None
+    if entry.html_dir:
+        candidate = parent / entry.html_dir
+        if candidate.is_dir() and (candidate / "index.html").exists():
+            html_dir = candidate
+    elif fmt == "tex":
+        candidate = parent / "html_paper"
+        if candidate.is_dir() and (candidate / "index.html").exists():
+            html_dir = candidate
+    elif fmt == "pregenerated":
+        html_dir = parent
+
+    # Resolve PDF path
+    pdf_path: Path | None = None
+    if entry.pdf_file_source:
+        candidate = parent / entry.pdf_file_source
+        if candidate.exists():
+            pdf_path = candidate
+    elif fmt == "tex":
+        candidate = parent / f"{source_path.stem}.pdf"
+        if candidate.exists():
+            pdf_path = candidate
+    elif fmt == "pdf":
+        if source_path.exists():
+            pdf_path = source_path
+    elif fmt == "pregenerated":
+        pdfs = list(parent.glob("*.pdf"))
+        if pdfs:
+            pdf_path = pdfs[0]
+
+    return ArtifactPaths(html_dir=html_dir, pdf_path=pdf_path)
+
+
 def find_tex_files(path: Path) -> list[Path]:
     """Find all .tex files in a path.
 
