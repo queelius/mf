@@ -226,6 +226,102 @@ def rate_limit(token: str | None) -> None:
     check_rate_limit(token)
 
 
+def _build_merged_project_view(
+    cache: Any,
+    db: Any,
+) -> dict[str, dict[str, Any]]:
+    """Build a merged view of all projects from cache and DB overrides.
+
+    Starts with cache entries (GitHub data), overlays DB overrides for any
+    field that exists in both.  DB-only entries (no cache) are also included.
+
+    Returns:
+        Dict mapping slug to merged data dict.
+    """
+    merged: dict[str, dict[str, Any]] = {}
+
+    # Start with cache entries
+    for slug in cache:
+        github_data = cache.get(slug) or {}
+        entry: dict[str, Any] = {
+            "title": github_data.get("name", slug),
+            "abstract": github_data.get("description", ""),
+            "tags": github_data.get("topics", []),
+            "category": "",
+            "stars": "",
+            "featured": False,
+            "hide": False,
+            "language": github_data.get("language", ""),
+            "github_stars": github_data.get("stargazers_count", 0),
+        }
+        # Overlay DB overrides
+        overrides = db.get(slug)
+        if overrides:
+            for key, value in overrides.items():
+                entry[key] = value
+        merged[slug] = entry
+
+    # Include DB-only entries not already covered by cache
+    for slug in db:
+        if slug not in merged:
+            data = db.get(slug)
+            if data:
+                merged[slug] = dict(data)
+
+    return merged
+
+
+def _filter_merged_projects(
+    merged: dict[str, dict[str, Any]],
+    query: str | None = None,
+    tags: list[str] | None = None,
+    category: str | None = None,
+    featured: bool | None = None,
+    hidden: bool | None = None,
+) -> list[tuple[str, dict[str, Any]]]:
+    """Apply filters to a merged project view.
+
+    Returns:
+        List of (slug, data) tuples matching all filters.
+    """
+    results: list[tuple[str, dict[str, Any]]] = []
+
+    for slug, data in sorted(merged.items()):
+        # Text search
+        if query:
+            query_lower = query.lower()
+            title = data.get("title", slug).lower()
+            abstract = data.get("abstract", "").lower()
+            if query_lower not in title and query_lower not in abstract:
+                continue
+
+        # Tags filter
+        if tags:
+            proj_tags = data.get("tags", [])
+            if not any(tag in proj_tags for tag in tags):
+                continue
+
+        # Category filter
+        if category and data.get("category") != category:
+            continue
+
+        # Featured filter
+        if featured is not None:
+            is_featured = data.get("featured", False)
+            if is_featured != featured:
+                continue
+
+        # Hidden filter
+        if hidden is not None:
+            is_hidden = data.get("hide", False)
+            if is_hidden != hidden:
+                continue
+
+        results.append((slug, data))
+
+    return results
+
+
 @projects.command(name="list")
 @click.option("-q", "--query", help="Search in title/abstract")
 @click.option("-t", "--tag", multiple=True, help="Filter by tag(s)")
@@ -246,12 +342,20 @@ def list_projects(
 
     from rich.table import Table
 
-    from mf.core.database import ProjectsDatabase
+    from mf.core.database import ProjectsCache, ProjectsDatabase
 
     db = ProjectsDatabase()
     db.load()
 
-    results = db.search(
+    cache = ProjectsCache()
+    cache.load()
+
+    # Build merged view: cache entries + DB overrides
+    merged = _build_merged_project_view(cache, db)
+
+    # Apply filters
+    results = _filter_merged_projects(
+        merged,
         query=query,
         tags=list(tag) if tag else None,
         category=category,

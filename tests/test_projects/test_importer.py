@@ -11,6 +11,10 @@ from mf.projects.importer import (
     refresh_projects,
     clean_stale_projects,
 )
+from mf.projects.commands import (
+    _build_merged_project_view,
+    _filter_merged_projects,
+)
 
 
 # -- Fixtures --
@@ -408,3 +412,207 @@ def test_clean_stale_no_stale(mock_client_cls, mock_site_root):
             token="test-token",
             dry_run=True,
         )
+
+
+# -- Bug 3: clean_stale_projects guards against empty API response --
+
+
+@patch("mf.projects.importer.GitHubClient")
+def test_clean_stale_aborts_on_empty_api_response(mock_client_cls, mock_site_root):
+    """If GitHub API returns 0 repos, clean should abort instead of deleting everything."""
+    mock_client = MagicMock()
+    mock_client.get_user_repos.return_value = []  # Empty — simulates API failure
+    mock_client_cls.return_value = mock_client
+
+    # Create a project dir that would be "stale" if the guard wasn't there
+    proj_dir = mock_site_root / "content" / "projects" / "my-project"
+    proj_dir.mkdir(parents=True)
+    (proj_dir / "index.md").write_text("real content")
+
+    # The function should return early without loading databases or deleting
+    clean_stale_projects(
+        username="testuser",
+        token="test-token",
+        auto_confirm=True,
+    )
+
+    # The directory should still exist — nothing was deleted
+    assert proj_dir.exists()
+    assert (proj_dir / "index.md").read_text() == "real content"
+
+
+@patch("mf.projects.importer.GitHubClient")
+def test_clean_stale_aborts_on_none_api_response(mock_client_cls, mock_site_root):
+    """If GitHub API returns None (network error), get_user_repos returns [], clean should abort."""
+    mock_client = MagicMock()
+    # Simulate network error returning empty list
+    mock_client.get_user_repos.return_value = []
+    mock_client_cls.return_value = mock_client
+
+    proj_dir = mock_site_root / "content" / "projects" / "important-project"
+    proj_dir.mkdir(parents=True)
+    (proj_dir / "index.md").write_text("important content")
+
+    clean_stale_projects(
+        username="testuser",
+        token="test-token",
+        auto_confirm=True,
+    )
+
+    # Nothing should be deleted
+    assert proj_dir.exists()
+
+
+# -- Bug 1: merged project view tests --
+
+
+class TestBuildMergedProjectView:
+    """Tests for _build_merged_project_view."""
+
+    def test_cache_only_entries(self):
+        """Projects in cache but not DB should appear in merged view."""
+        cache = MagicMock()
+        cache.__iter__ = MagicMock(return_value=iter(["alpha", "beta"]))
+        cache.get.side_effect = lambda slug: {
+            "alpha": {"name": "alpha", "description": "Alpha project", "topics": ["ml"], "language": "Python", "stargazers_count": 5},
+            "beta": {"name": "beta", "description": "Beta project", "topics": [], "language": "Rust", "stargazers_count": 0},
+        }.get(slug)
+
+        db = MagicMock()
+        db.__iter__ = MagicMock(return_value=iter([]))
+        db.get.return_value = None
+
+        merged = _build_merged_project_view(cache, db)
+
+        assert "alpha" in merged
+        assert "beta" in merged
+        assert merged["alpha"]["title"] == "alpha"
+        assert merged["alpha"]["abstract"] == "Alpha project"
+        assert merged["alpha"]["tags"] == ["ml"]
+
+    def test_db_overrides_cache(self):
+        """DB overrides should take precedence over cache values."""
+        cache = MagicMock()
+        cache.__iter__ = MagicMock(return_value=iter(["proj"]))
+        cache.get.return_value = {
+            "name": "proj",
+            "description": "GitHub desc",
+            "topics": ["old-tag"],
+            "language": "Python",
+            "stargazers_count": 2,
+        }
+
+        db = MagicMock()
+        db.__iter__ = MagicMock(return_value=iter(["proj"]))
+        db.get.return_value = {
+            "title": "Custom Title",
+            "featured": True,
+            "category": "library",
+            "tags": ["custom-tag"],
+        }
+
+        merged = _build_merged_project_view(cache, db)
+
+        assert merged["proj"]["title"] == "Custom Title"
+        assert merged["proj"]["featured"] is True
+        assert merged["proj"]["category"] == "library"
+        assert merged["proj"]["tags"] == ["custom-tag"]
+
+    def test_db_only_entries(self):
+        """Projects in DB but not cache should still appear."""
+        cache = MagicMock()
+        cache.__iter__ = MagicMock(return_value=iter([]))
+
+        db = MagicMock()
+        db.__iter__ = MagicMock(return_value=iter(["db-only"]))
+        db.get.return_value = {
+            "title": "DB Only Project",
+            "featured": True,
+        }
+
+        merged = _build_merged_project_view(cache, db)
+
+        assert "db-only" in merged
+        assert merged["db-only"]["title"] == "DB Only Project"
+
+    def test_merged_count_exceeds_db_count(self):
+        """Merged view should include more projects than DB alone when cache has extras."""
+        cache = MagicMock()
+        cache.__iter__ = MagicMock(return_value=iter(["a", "b", "c"]))
+        cache.get.side_effect = lambda slug: {
+            "name": slug, "description": "", "topics": [],
+            "language": "", "stargazers_count": 0,
+        }
+
+        db = MagicMock()
+        db.__iter__ = MagicMock(return_value=iter(["a"]))
+        db.get.side_effect = lambda slug: {"title": "Override A"} if slug == "a" else None
+
+        merged = _build_merged_project_view(cache, db)
+
+        assert len(merged) == 3  # all from cache
+        assert merged["a"]["title"] == "Override A"  # overridden
+
+
+class TestFilterMergedProjects:
+    """Tests for _filter_merged_projects."""
+
+    def _make_merged(self):
+        return {
+            "alpha": {"title": "Alpha", "abstract": "ML library", "tags": ["ml", "python"], "category": "library", "featured": True, "hide": False},
+            "beta": {"title": "Beta", "abstract": "CLI tool", "tags": ["cli"], "category": "tool", "featured": False, "hide": False},
+            "gamma": {"title": "Gamma", "abstract": "Hidden project", "tags": [], "category": "library", "featured": False, "hide": True},
+        }
+
+    def test_no_filters_returns_all(self):
+        merged = self._make_merged()
+        results = _filter_merged_projects(merged)
+        assert len(results) == 3
+
+    def test_query_filter(self):
+        merged = self._make_merged()
+        results = _filter_merged_projects(merged, query="ML")
+        assert len(results) == 1
+        assert results[0][0] == "alpha"
+
+    def test_tag_filter(self):
+        merged = self._make_merged()
+        results = _filter_merged_projects(merged, tags=["cli"])
+        assert len(results) == 1
+        assert results[0][0] == "beta"
+
+    def test_category_filter(self):
+        merged = self._make_merged()
+        results = _filter_merged_projects(merged, category="tool")
+        assert len(results) == 1
+        assert results[0][0] == "beta"
+
+    def test_featured_filter(self):
+        merged = self._make_merged()
+        results = _filter_merged_projects(merged, featured=True)
+        assert len(results) == 1
+        assert results[0][0] == "alpha"
+
+    def test_hidden_filter(self):
+        merged = self._make_merged()
+        results = _filter_merged_projects(merged, hidden=True)
+        assert len(results) == 1
+        assert results[0][0] == "gamma"
+
+    def test_combined_filters(self):
+        merged = self._make_merged()
+        results = _filter_merged_projects(merged, category="library", featured=True)
+        assert len(results) == 1
+        assert results[0][0] == "alpha"
+
+    def test_query_searches_abstract(self):
+        merged = self._make_merged()
+        results = _filter_merged_projects(merged, query="hidden")
+        assert len(results) == 1
+        assert results[0][0] == "gamma"
+
+    def test_results_sorted_by_slug(self):
+        merged = self._make_merged()
+        results = _filter_merged_projects(merged)
+        slugs = [slug for slug, _ in results]
+        assert slugs == sorted(slugs)
