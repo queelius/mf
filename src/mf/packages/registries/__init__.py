@@ -29,7 +29,10 @@ def fetch_json(url: str, timeout: int = 10) -> dict | None:
         Parsed JSON dict, or None on any error.
     """
     try:
-        req = urllib.request.Request(url, headers={"Accept": "application/json"})
+        req = urllib.request.Request(url, headers={
+            "Accept": "application/json",
+            "User-Agent": "mf/1.0 (https://metafunctor.com)",
+        })
         with urllib.request.urlopen(req, timeout=timeout) as response:
             return json.loads(response.read().decode("utf-8"))
     except Exception:
