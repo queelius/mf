@@ -93,6 +93,96 @@ def resolve_artifact_paths(entry: "PaperEntry") -> ArtifactPaths:
     return ArtifactPaths(html_dir=html_dir, pdf_path=pdf_path)
 
 
+def ingest_paper(
+    slug: str,
+    force: bool = False,
+    dry_run: bool = False,
+) -> bool:
+    """Ingest pre-built artifacts for a paper into Hugo static directory.
+
+    Requires the paper to already exist in paper_db.json with a source_path.
+    Copies HTML directory and/or PDF to /static/latex/{slug}/.
+
+    Args:
+        slug: Paper slug (must exist in DB)
+        force: Copy even if source hash unchanged
+        dry_run: Preview only
+
+    Returns:
+        True if successful (or skipped because unchanged)
+    """
+    db = PaperDatabase()
+    db.load()
+
+    entry = db.get(slug)
+    if not entry:
+        console.print(f"[red]Paper not found: {slug}[/red]")
+        return False
+
+    source_path = entry.source_path
+    if not source_path:
+        console.print(f"[red]No source_path set for {slug}[/red]")
+        return False
+
+    if not source_path.exists():
+        console.print(f"[red]Source file missing: {source_path}[/red]")
+        return False
+
+    # Resolve artifact locations
+    artifacts = resolve_artifact_paths(entry)
+    if not artifacts.html_dir and not artifacts.pdf_path:
+        console.print(f"[red]No artifacts found for {slug}[/red]")
+        console.print(f"  Looked for HTML in: {source_path.parent / 'html_paper'}")
+        console.print(f"  Looked for PDF: {source_path.parent / (source_path.stem + '.pdf')}")
+        return False
+
+    # Check staleness
+    source_hash = compute_file_hash(source_path)
+    if not force and entry.source_hash == source_hash:
+        console.print(f"[green]{slug} is up to date[/green]")
+        return True
+
+    console.print(f"[cyan]Ingesting {slug}...[/cyan]")
+
+    backup_path = None
+    try:
+        # Backup existing
+        backup_path = backup_existing_paper(slug, dry_run)
+
+        # Copy HTML directory
+        if artifacts.html_dir:
+            if not copy_to_static(artifacts.html_dir, slug, dry_run):
+                if backup_path:
+                    restore_backup(backup_path, slug, dry_run)
+                return False
+
+        # Copy PDF (may be in a different location than HTML)
+        if artifacts.pdf_path:
+            if not dry_run:
+                paths = get_paths()
+                target_dir = paths.latex / slug
+                target_dir.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(artifacts.pdf_path, target_dir / artifacts.pdf_path.name)
+
+        # Update database
+        if not dry_run:
+            entry.set_source_tracking(source_path, source_hash)
+            db.save()
+
+            # Generate Hugo content
+            from mf.papers.generator import generate_paper_content
+            generate_paper_content(slug, db)
+
+        console.print(f"[green]Successfully ingested: {slug}[/green]")
+        return True
+
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]")
+        if backup_path and backup_path.exists():
+            restore_backup(backup_path, slug, dry_run)
+        return False
+
+
 def find_tex_files(path: Path) -> list[Path]:
     """Find all .tex files in a path.
 
