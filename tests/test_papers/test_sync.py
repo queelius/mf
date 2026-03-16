@@ -1,4 +1,4 @@
-"""Tests for mf.papers.sync module (paper synchronization and staleness)."""
+"""Tests for mf.papers.sync module (paper staleness detection)."""
 
 import json
 from pathlib import Path
@@ -8,54 +8,11 @@ import pytest
 
 from mf.papers.sync import (
     SyncStatus,
-    SyncResults,
-    ProcessingResult,
     check_paper_staleness,
     check_all_papers,
     print_sync_status,
 )
 from mf.core.database import PaperDatabase, PaperEntry
-
-
-# ---------------------------------------------------------------------------
-# SyncResults / ProcessingResult dataclasses
-# ---------------------------------------------------------------------------
-
-
-def test_sync_results_empty():
-    """Test SyncResults with no results."""
-    results = SyncResults()
-    assert results.success_count == 0
-    assert results.failure_count == 0
-
-
-def test_sync_results_counts():
-    """Test SyncResults success and failure counts."""
-    results = SyncResults()
-    results.succeeded.append(ProcessingResult(slug="a", success=True, duration=1.0))
-    results.succeeded.append(ProcessingResult(slug="b", success=True, duration=2.0))
-    results.failed.append(ProcessingResult(slug="c", success=False, error="fail", duration=0.5))
-
-    assert results.success_count == 2
-    assert results.failure_count == 1
-
-
-def test_processing_result_fields():
-    """Test ProcessingResult dataclass fields."""
-    r = ProcessingResult(slug="test", success=True, duration=3.5)
-    assert r.slug == "test"
-    assert r.success is True
-    assert r.error is None
-    assert r.duration == 3.5
-
-
-def test_sync_results_print_summary(capsys):
-    """Test that print_summary runs without errors."""
-    results = SyncResults()
-    results.succeeded.append(ProcessingResult(slug="ok", success=True, duration=1.0))
-    results.failed.append(ProcessingResult(slug="bad", success=False, error="timeout"))
-    # Should not raise
-    results.print_summary()
 
 
 # ---------------------------------------------------------------------------
