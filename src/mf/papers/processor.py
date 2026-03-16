@@ -14,7 +14,7 @@ from rich.console import Console
 
 from mf.core.config import get_paths
 from mf.core.crypto import compute_file_hash
-from mf.core.database import PaperDatabase
+from mf.core.database import PaperDatabase, PaperEntry
 
 console = Console()
 
@@ -27,7 +27,7 @@ class ArtifactPaths:
     pdf_path: Path | None = None
 
 
-def resolve_artifact_paths(entry: "PaperEntry") -> ArtifactPaths:
+def resolve_artifact_paths(entry: PaperEntry) -> ArtifactPaths:
     """Resolve artifact locations from source_path + format + overrides.
 
     Convention for tex format:
@@ -145,15 +145,13 @@ def ingest_paper(
         backup_path = backup_existing_paper(slug, dry_run)
 
         # Copy HTML directory
-        if artifacts.html_dir:
-            if not copy_to_static(artifacts.html_dir, slug, dry_run):
-                if backup_path:
-                    restore_backup(backup_path, slug, dry_run)
-                return False
+        if artifacts.html_dir and not copy_to_static(artifacts.html_dir, slug, dry_run):
+            if backup_path:
+                restore_backup(backup_path, slug, dry_run)
+            return False
 
         # Copy PDF (may be in a different location than HTML)
-        if artifacts.pdf_path:
-            if not dry_run:
+        if artifacts.pdf_path and not dry_run:
                 paths = get_paths()
                 target_dir = paths.latex / slug
                 target_dir.mkdir(parents=True, exist_ok=True)
