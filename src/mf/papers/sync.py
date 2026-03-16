@@ -179,6 +179,37 @@ def print_sync_status(status: SyncStatus) -> None:
             console.print(f"    Source: {stale_path}")
 
 
+def paper_status(slug: str | None = None) -> None:
+    """Report paper staleness status.
+
+    Args:
+        slug: If provided, check only this paper
+    """
+    db = PaperDatabase()
+    db.load()
+
+    if slug:
+        entry = db.get(slug)
+        if not entry:
+            console.print(f"[red]Paper not found: {slug}[/red]")
+            return
+
+        result, source_path = check_paper_staleness(entry)
+        if result == "missing":
+            console.print(f"[red]Source file missing: {entry.source_path}[/red]")
+        elif result == "skipped":
+            console.print(f"[yellow]{slug}: skipped (no trackable source)[/yellow]")
+        elif result == "up_to_date":
+            console.print(f"[green]{slug}: up to date[/green]")
+        elif result in ("stale", "no_hash"):
+            console.print(f"[yellow]{slug}: stale ({result})[/yellow]")
+        return
+
+    console.print(f"Checking {len(db)} papers for changes...")
+    status = check_all_papers(db)
+    print_sync_status(status)
+
+
 def sync_papers(
     slug: str | None = None,
     auto_yes: bool = False,

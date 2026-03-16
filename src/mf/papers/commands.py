@@ -30,52 +30,33 @@ def papers() -> None:
 
 
 @papers.command()
-@click.argument("source", type=click.Path(exists=True))
-@click.option("--slug", help="Override slug for the paper")
-@click.option("-y", "--yes", is_flag=True, help="Auto-answer yes to prompts")
+@click.argument("slug")
+@click.option("--force", is_flag=True, help="Ingest even if source unchanged")
 @click.pass_obj
-def process(ctx, source: str, slug: str | None, yes: bool) -> None:
-    """Process a LaTeX paper into Hugo content.
+def ingest(ctx, slug: str, force: bool) -> None:
+    """Ingest pre-built paper artifacts into Hugo site.
 
-    SOURCE is a path to a .tex file or directory containing .tex files.
+    SLUG is the paper slug (must exist in paper_db.json).
+    Build the paper first with 'make html pdf' in the paper's repo.
     """
-    from mf.papers.processor import process_paper
+    from mf.papers.processor import ingest_paper
 
     dry_run = ctx.dry_run if ctx else False
-    process_paper(source, slug=slug, auto_yes=yes, dry_run=dry_run)
+    ingest_paper(slug, force=force, dry_run=dry_run)
 
 
 @papers.command()
-@click.option("--slug", help="Sync only a specific paper by slug")
-@click.option("-y", "--yes", is_flag=True, help="Auto-regenerate stale papers")
-@click.option(
-    "-w", "--workers",
-    default=1,
-    type=click.IntRange(1, 16),
-    help="Number of parallel workers for processing (default: 1)",
-)
-@click.option(
-    "-t", "--timeout",
-    default=300,
-    type=click.IntRange(30, 1800),
-    help="Timeout per paper in seconds (default: 300 = 5 min)",
-)
+@click.option("--slug", help="Check only a specific paper")
 @click.pass_obj
-def sync(ctx, slug: str | None, yes: bool, workers: int, timeout: int) -> None:
-    """Check for stale papers and regenerate.
+def status(ctx, slug: str | None) -> None:
+    """Check paper staleness status.
 
-    Compares source file hashes with stored hashes to detect changes.
-
-    Use --workers to process multiple papers in parallel (e.g., -w 4).
-    This can significantly speed up syncing when many papers are stale.
-
-    Use --timeout to set max time per paper (default: 5 minutes).
-    Papers that exceed the timeout will be reported as failed.
+    Reports which papers have changed source files without
+    being re-ingested. Does not modify any files.
     """
-    from mf.papers.sync import sync_papers
+    from mf.papers.sync import paper_status
 
-    dry_run = ctx.dry_run if ctx else False
-    sync_papers(slug=slug, auto_yes=yes, dry_run=dry_run, workers=workers, timeout=timeout)
+    paper_status(slug=slug)
 
 
 @papers.command()
