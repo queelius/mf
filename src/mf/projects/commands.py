@@ -177,6 +177,7 @@ def sync(ctx, user: str | None, exclude_forks: bool, include_private: bool, toke
 
     To refresh a single project, use: mf projects refresh --slug NAME
     """
+    from mf.core.database import ProjectsDatabase
     from mf.projects.importer import (
         clean_stale_projects,
         import_user_repos,
@@ -188,6 +189,15 @@ def sync(ctx, user: str | None, exclude_forks: bool, include_private: bool, toke
     user = _resolve_user(user)
     if not user:
         return
+
+    # Snapshot featured flags before sync to detect accidental resets
+    db = ProjectsDatabase()
+    db.load()
+    featured_snapshot: dict[str, bool] = {}
+    for slug in db:
+        data = db.get(slug)
+        if data and data.get("featured"):
+            featured_snapshot[slug] = True
 
     console.print("[bold cyan]Step 1/3: Cleaning stale projects...[/bold cyan]")
     clean_stale_projects(
@@ -212,6 +222,22 @@ def sync(ctx, user: str | None, exclude_forks: bool, include_private: bool, toke
     console.print()
     console.print("[bold cyan]Step 3/3: Refreshing all projects...[/bold cyan]")
     refresh_projects(token=token, force=True, dry_run=dry_run)
+
+    # Verify featured flags survived sync
+    if featured_snapshot and not dry_run:
+        db_after = ProjectsDatabase()
+        db_after.load()
+        restored = 0
+        for slug, was_featured in featured_snapshot.items():
+            data = db_after.get(slug)
+            if data is not None and not data.get("featured") and was_featured:
+                data["featured"] = True
+                db_after.set(slug, data)
+                restored += 1
+                console.print(f"[yellow]Restored featured flag for: {slug}[/yellow]")
+        if restored > 0:
+            db_after.save()
+            console.print(f"[yellow]Restored {restored} featured flag(s) that were lost during sync[/yellow]")
 
     console.print()
     console.print("[bold green]Sync complete![/bold green]")
