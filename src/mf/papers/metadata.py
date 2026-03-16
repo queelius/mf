@@ -6,7 +6,6 @@ Consolidates extraction logic from generate_raw_papers.py and extract_paper_meta
 
 from __future__ import annotations
 
-import json
 import re
 from dataclasses import dataclass, field
 from html.parser import HTMLParser
@@ -68,8 +67,6 @@ class HTMLMetadataExtractor(HTMLParser):
         self.keywords: list[str] = []
         self.generated_date: str | None = None
         self.document_date: str | None = None
-        self.tex2any_config: dict | None = None
-
         self._in_title = False
         self._title_text = ""
         self._current_tag = None
@@ -85,19 +82,6 @@ class HTMLMetadataExtractor(HTMLParser):
             name = attrs_dict.get("name", "")
             content = attrs_dict.get("content", "")
             prop = attrs_dict.get("property", "")
-
-            # tex2any footer config (contains author, year, etc.)
-            if name == "tex2any-footer-config" and content:
-                try:
-                    self.tex2any_config = json.loads(content)
-                    if "author" in self.tex2any_config:
-                        author = self.tex2any_config["author"]
-                        if isinstance(author, list):
-                            self.authors = author
-                        elif isinstance(author, str):
-                            self.authors = [a.strip() for a in author.split(",")]
-                except json.JSONDecodeError:
-                    pass
 
             # Description/abstract
             if name == "description" or prop == "og:description":

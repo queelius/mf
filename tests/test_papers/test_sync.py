@@ -20,14 +20,18 @@ from mf.core.database import PaperDatabase, PaperEntry
 # ---------------------------------------------------------------------------
 
 
-def test_staleness_non_tex_format():
-    """Test that non-tex source format is skipped."""
-    entry = PaperEntry(slug="docx-paper", data={
-        "source_path": "/some/file.docx",
-        "source_format": "docx",
+def test_staleness_pdf_format_checks_hash(tmp_path):
+    """Test that pdf format papers are hash-checked (not skipped)."""
+    pdf_file = tmp_path / "paper.pdf"
+    pdf_file.write_text("fake pdf")
+    entry = PaperEntry(slug="pdf-paper", data={
+        "source_path": str(pdf_file),
+        "source_format": "pdf",
     })
     status, path = check_paper_staleness(entry)
-    assert status == "skipped_non_tex"
+    # Should be "no_hash" (stale) since no hash stored, NOT "skipped_non_tex"
+    assert status == "no_hash"
+    assert path == pdf_file
 
 
 def test_staleness_no_source_path():

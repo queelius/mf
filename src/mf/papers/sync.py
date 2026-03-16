@@ -39,13 +39,8 @@ def check_paper_staleness(entry: PaperEntry) -> tuple[str, Path | None]:
         - "stale": Source has changed
         - "no_hash": No hash stored (assume stale)
         - "missing": Source file not found
-        - "skipped": Source is a directory (not trackable)
-        - "skipped_non_tex": Source format is not tex (docx, pregenerated)
+        - "skipped": No source path or source is a directory
     """
-    # Check for non-tex source formats first
-    if entry.source_format != "tex":
-        return ("skipped_non_tex", entry.source_path)
-
     source_path = entry.source_path
     if not source_path:
         return ("skipped", None)
@@ -90,8 +85,6 @@ def check_all_papers(db: PaperDatabase) -> SyncStatus:
             status.missing.append((entry, str(entry.source_path)))
         elif result == "skipped":
             status.skipped.append((entry, "directory reference"))
-        elif result == "skipped_non_tex":
-            status.skipped.append((entry, f"non-tex format ({entry.source_format})"))
 
     return status
 
