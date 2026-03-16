@@ -405,6 +405,15 @@ def clean_stale_projects(
 
     client = GitHubClient(token)
     repos = client.get_user_repos(username, include_private=include_private)
+
+    if not repos:
+        console.print(
+            "[red]GitHub API returned 0 repositories. "
+            "This is likely a rate limit or network error.[/red]"
+        )
+        console.print("[yellow]Aborting clean to avoid deleting all projects.[/yellow]")
+        return
+
     github_slugs = {repo["name"] for repo in repos}
 
     paths = get_paths()
