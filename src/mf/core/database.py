@@ -93,8 +93,18 @@ class PaperEntry:
 
     @property
     def source_format(self) -> str:
-        """Get source format (tex, docx, pregenerated). Defaults to tex."""
+        """Get source format (tex, pdf, pregenerated). Defaults to tex."""
         return str(self.data.get("source_format", "tex"))
+
+    @property
+    def html_dir(self) -> str | None:
+        """Get source HTML directory override."""
+        return self.data.get("html_dir")
+
+    @property
+    def pdf_file_source(self) -> str | None:
+        """Get source PDF file override."""
+        return self.data.get("pdf_file_source")
 
     @property
     def last_generated(self) -> str | None:
@@ -237,7 +247,7 @@ class PaperDatabase:
             "related_posts": ["/post/2024-01-01-about-this-paper/"],
             # Source tracking (for LaTeX processing)
             "source_path": "/path/to/source/paper.tex",
-            "source_format": "tex",  # tex (default), docx, pregenerated
+            "source_format": "tex",  # tex (default), pdf, pregenerated
             "source_hash": "sha256:abcdef...",
             "last_generated": "2025-10-07T12:34:56",
         },

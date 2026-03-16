@@ -80,7 +80,15 @@ PAPERS_SCHEMA: dict[str, FieldDef] = {
     "source_format": FieldDef(
         FieldType.STRING,
         "Source format",
-        choices=["tex", "docx", "pregenerated"],
+        choices=["tex", "pdf", "pregenerated"],
+    ),
+    "html_dir": FieldDef(
+        FieldType.STRING,
+        "Source HTML directory override (relative to source_path parent)",
+    ),
+    "pdf_file_source": FieldDef(
+        FieldType.STRING,
+        "Source PDF file override (relative to source_path parent)",
     ),
     # Hugo settings
     "aliases": FieldDef(FieldType.STRING_LIST, "Hugo URL aliases for redirects"),
