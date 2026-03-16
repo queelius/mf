@@ -81,7 +81,7 @@ def resolve_artifact_paths(entry: PaperEntry) -> ArtifactPaths:
         if source_path.exists():
             pdf_path = source_path
     elif fmt == "pregenerated":
-        pdfs = list(parent.glob("*.pdf"))
+        pdfs = sorted(parent.glob("*.pdf"))
         if pdfs:
             pdf_path = pdfs[0]
 
@@ -152,10 +152,10 @@ def ingest_paper(
 
         # Copy PDF (may be in a different location than HTML)
         if artifacts.pdf_path and not dry_run:
-                paths = get_paths()
-                target_dir = paths.latex / slug
-                target_dir.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(artifacts.pdf_path, target_dir / artifacts.pdf_path.name)
+            paths = get_paths()
+            target_dir = paths.latex / slug
+            target_dir.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(artifacts.pdf_path, target_dir / artifacts.pdf_path.name)
 
         # Update database
         if not dry_run:

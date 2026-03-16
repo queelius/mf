@@ -24,7 +24,7 @@ console = Console()
 def papers() -> None:
     """Manage research papers.
 
-    Process LaTeX papers, generate Hugo content, and sync changes.
+    Ingest pre-built artifacts, generate Hugo content, and check status.
     """
     pass
 

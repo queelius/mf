@@ -1,1 +1,1 @@
-"""Paper processing pipeline."""
+"""Paper content management and artifact ingestion."""

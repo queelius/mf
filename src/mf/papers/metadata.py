@@ -57,7 +57,7 @@ class PaperMetadata:
 
 
 class HTMLMetadataExtractor(HTMLParser):
-    """Extract metadata from HTML files (tex2any, pkgdown, etc.)."""
+    """Extract metadata from HTML files."""
 
     def __init__(self):
         super().__init__()
