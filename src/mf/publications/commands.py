@@ -1,155 +1,91 @@
 """CLI commands for publications management.
 
-Publications = officially published works with venues (journals, conferences).
-Use `mf papers` for all papers including preprints and drafts.
+Uses PubsDatabase (pubs_db.json) for all operations. Decoupled from PaperDatabase.
 """
+
+import json as json_module
+from datetime import date
 
 import click
 from rich.console import Console
 from rich.panel import Panel
+from rich.syntax import Syntax
 from rich.table import Table
+
+from mf.core.config import get_paths
+from mf.publications.database import VALID_STATUSES, VALID_TYPES, PubEntry, PubsDatabase
 
 console = Console()
 
 
-def is_publication(entry) -> bool:
-    """Check if a paper entry qualifies as a publication.
-
-    A publication is a paper that has been officially published:
-    - Has status="published", OR
-    - Has a venue (journal, conference, etc.), OR
-    - Has a DOI (excluding arxiv DOIs)
-    """
-    if entry.data.get("status") == "published":
-        return True
-    if entry.data.get("venue"):
-        return True
-    # DOI indicates formal publication (but not arxiv preprint DOIs)
-    doi = entry.data.get("doi", "")
-    return bool(doi and "arxiv" not in doi.lower())
-
-
-def is_preprint(entry) -> bool:
-    """Check if a paper is a preprint (arXiv, etc.)."""
-    return bool(entry.data.get("arxiv_id"))
+def _load_db() -> PubsDatabase:
+    """Create, load, and return a PubsDatabase."""
+    db = PubsDatabase()
+    db.load()
+    return db
 
 
 @click.group(name="pubs")
 def pubs() -> None:
-    """Manage publications (officially published works).
+    """Manage publications lifecycle (pubs_db.json).
 
-    Publications are papers with venues (journals, conferences).
-    Use `mf papers` for all papers including preprints and drafts.
+    Full lifecycle tracking: draft → submitted → accepted → published.
+    Use `mf pubs list`, `mf pubs add`, `mf pubs update`, `mf pubs log`.
     """
-    pass
-
-
-@pubs.command()
-@click.pass_obj
-def sync(ctx) -> None:
-    """Sync publications to paper database.
-
-    Reads frontmatter from content/publications/ and updates paper_db.json.
-    """
-    from mf.publications.sync import sync_publications
-
-    dry_run = ctx.dry_run if ctx else False
-    sync_publications(dry_run=dry_run)
-
-
-@pubs.command()
-@click.option("--slug", help="Generate only a specific publication (by paper slug)")
-@click.option("--force", is_flag=True, help="Overwrite existing files completely")
-@click.pass_obj
-def generate(ctx, slug: str | None, force: bool) -> None:
-    """Generate publication content from paper database.
-
-    Creates/updates content/publications/ markdown files from paper_db.json
-    entries that qualify as publications (have venue, status=published, or DOI).
-
-    By default, updates existing files by merging pdf/html/cite fields without
-    overwriting other manual edits. Use --force to completely regenerate.
-
-    \b
-    Examples:
-        mf pubs generate                           # Update all publications
-        mf pubs generate --slug cognitive-mri-ai-conversations
-        mf pubs generate --force                   # Regenerate all from scratch
-        mf pubs generate --dry-run                 # Preview changes
-    """
-    from mf.publications.generate import generate_publications
-
-    dry_run = ctx.dry_run if ctx else False
-    generate_publications(slug=slug, dry_run=dry_run, force=force)
 
 
 @pubs.command(name="list")
-@click.option("-q", "--query", help="Search in title/abstract")
-@click.option("-t", "--tag", multiple=True, help="Filter by tag(s)")
-@click.option("-c", "--category", help="Filter by category")
-@click.option("--venue", help="Filter by venue")
-@click.option("--all", "show_all", is_flag=True, help="Include non-published papers")
+@click.option("--status", help="Filter by status")
+@click.option("--type", "pub_type", help="Filter by type")
+@click.option("--tag", multiple=True, help="Filter by tag(s) (can be repeated)")
+@click.option("--venue", help="Filter by venue (substring match)")
+@click.option("-q", help="Text search in title/abstract")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+@click.pass_obj
 def list_pubs(
-    query: str | None,
+    ctx,
+    status: str | None,
+    pub_type: str | None,
     tag: tuple[str, ...],
-    category: str | None,
     venue: str | None,
-    show_all: bool,
+    q: str | None,
     as_json: bool,
 ) -> None:
-    """List publications (officially published papers).
-
-    By default only shows papers with a venue or status="published".
-    Use --all to include preprints and drafts.
+    """List publications with optional filters.
 
     \b
     Examples:
-        mf pubs list                    # Published only
-        mf pubs list --all              # All papers
+        mf pubs list
+        mf pubs list --status published
+        mf pubs list --type "conference paper"
+        mf pubs list --tag "encrypted search" --tag "privacy"
         mf pubs list --venue "IEEE"
-        mf pubs list --tag "encrypted search"
+        mf pubs list -q "series systems"
+        mf pubs list --json
     """
-    import json as json_module
+    db = _load_db()
 
-    from mf.core.database import PaperDatabase
-
-    db = PaperDatabase()
-    db.load()
-
-    # Get all papers and filter
-    results = []
+    results: list[PubEntry] = []
     for slug in db:
         entry = db.get(slug)
-        if not entry:
+        if entry is None:
             continue
 
-        # By default, only show publications (has venue or status=published)
-        if not show_all and not is_publication(entry):
+        if status and entry.status != status:
             continue
-
-        # Text search
-        if query:
-            query_lower = query.lower()
-            title = entry.data.get("title", slug).lower()
-            abstract = entry.data.get("abstract", "").lower()
-            if query_lower not in title and query_lower not in abstract:
-                continue
-
-        # Tags filter
-        if tag:
-            entry_tags = entry.data.get("tags", [])
-            if not any(t in entry_tags for t in tag):
-                continue
-
-        # Category filter
-        if category and entry.data.get("category") != category:
+        if pub_type and entry.type != pub_type:
             continue
-
-        # Venue filter
+        if tag and not any(t in entry.tags for t in tag):
+            continue
         if venue:
-            entry_venue = entry.data.get("venue", "").lower()
+            entry_venue = (entry.venue or "").lower()
             if venue.lower() not in entry_venue:
+                continue
+        if q:
+            q_lower = q.lower()
+            title = entry.title.lower()
+            abstract = (entry.abstract or "").lower()
+            if q_lower not in title and q_lower not in abstract:
                 continue
 
         results.append(entry)
@@ -157,15 +93,15 @@ def list_pubs(
     if as_json:
         output = [
             {
-                "slug": entry.slug,
-                "title": entry.title,
-                "date": entry.date,
-                "category": entry.data.get("category"),
-                "status": entry.data.get("status"),
-                "venue": entry.data.get("venue"),
-                "tags": entry.data.get("tags", []),
+                "slug": e.slug,
+                "title": e.title,
+                "date": e.date,
+                "status": e.status,
+                "type": e.type,
+                "venue": e.venue,
+                "tags": e.tags,
             }
-            for entry in results
+            for e in results
         ]
         console.print(json_module.dumps(output, indent=2))
         return
@@ -177,20 +113,19 @@ def list_pubs(
     table = Table(title=f"Publications ({len(results)} found)")
     table.add_column("Slug", style="cyan")
     table.add_column("Title")
-    table.add_column("Category", style="green")
+    table.add_column("Type", style="green")
     table.add_column("Status", style="blue")
     table.add_column("Venue", style="dim")
 
-    for entry in sorted(results, key=lambda e: e.date or "", reverse=True):
-        title = entry.title
+    for e in sorted(results, key=lambda x: x.date or "", reverse=True):
+        title = e.title
+        venue_str = e.venue or ""
         table.add_row(
-            entry.slug,
+            e.slug,
             title[:45] + "..." if len(title) > 45 else title,
-            entry.data.get("category", ""),
-            entry.data.get("status", ""),
-            (entry.data.get("venue", "")[:20] + "..."
-             if len(entry.data.get("venue", "")) > 20
-             else entry.data.get("venue", "")),
+            e.type,
+            e.status,
+            venue_str[:20] + "..." if len(venue_str) > 20 else venue_str,
         )
 
     console.print(table)
@@ -198,191 +133,333 @@ def list_pubs(
 
 @pubs.command()
 @click.argument("slug")
-def show(slug: str) -> None:
-    """Show details for a specific publication.
+@click.pass_obj
+def show(ctx, slug: str) -> None:
+    """Show full details for a publication.
 
     \b
     Examples:
-        mf pubs show 2016-ieee-int-8-ccts
-        mf pubs show reliability-estimation-in-series-systems
+        mf pubs show my-paper-slug
     """
-    import json as json_module
-
-    from rich.syntax import Syntax
-
-    from mf.core.database import PaperDatabase
-
-    db = PaperDatabase()
-    db.load()
-
+    db = _load_db()
     entry = db.get(slug)
-
-    if not entry:
+    if entry is None:
         console.print(f"[red]Publication not found: {slug}[/red]")
-        return
+        raise SystemExit(1)
 
-    # Display as formatted JSON
-    json_str = json_module.dumps(entry.data, indent=2)
+    data = {"slug": entry.slug, **entry.to_dict()}
+    json_str = json_module.dumps(data, indent=2)
     syntax = Syntax(json_str, "json", theme="monokai", line_numbers=True)
     console.print(Panel(syntax, title=f"Publication: {slug}"))
 
 
 @pubs.command()
-def stats() -> None:
-    """Show publication statistics.
+@click.argument("slug")
+@click.option("--title", required=True, help="Publication title")
+@click.option("--type", "pub_type", required=True, help=f"Type: {', '.join(sorted(VALID_TYPES))}")
+@click.option("--status", default="draft", show_default=True,
+              help=f"Status: {', '.join(sorted(VALID_STATUSES))}")
+@click.option("--venue", help="Venue name (journal, conference, etc.)")
+@click.option("--doi", help="DOI")
+@click.option("--arxiv", "arxiv_id", help="arXiv ID (e.g. 2301.12345)")
+@click.option("--pdf", help="PDF artifact URL/path")
+@click.option("--html", help="HTML artifact URL/path")
+@click.option("--code", help="Code artifact URL/path")
+@click.option("--source-repo", help="Source repository path")
+@click.pass_obj
+def add(
+    ctx,
+    slug: str,
+    title: str,
+    pub_type: str,
+    status: str,
+    venue: str | None,
+    doi: str | None,
+    arxiv_id: str | None,
+    pdf: str | None,
+    html: str | None,
+    code: str | None,
+    source_repo: str | None,
+) -> None:
+    """Add a new publication entry.
 
-    Only counts papers that qualify as publications (have venue or status=published).
-    Use `mf papers stats` for all papers.
+    \b
+    Examples:
+        mf pubs add my-new-paper --title "My Paper" --type "conference paper"
+        mf pubs add preprint-2025 --title "A Preprint" --type preprint --arxiv 2501.00001
     """
-    from mf.core.database import PaperDatabase
+    dry_run = ctx.dry_run if ctx else False
 
-    db = PaperDatabase()
-    db.load()
+    if status not in VALID_STATUSES:
+        console.print(f"[red]Invalid status '{status}'. Valid: {sorted(VALID_STATUSES)}[/red]")
+        raise SystemExit(1)
+    if pub_type not in VALID_TYPES:
+        console.print(f"[red]Invalid type '{pub_type}'. Valid: {sorted(VALID_TYPES)}[/red]")
+        raise SystemExit(1)
 
-    # Count publications vs all papers
-    total_papers = 0
-    publications = 0
+    db = _load_db()
+
+    if slug in db:
+        console.print(f"[red]Publication already exists: {slug}[/red]")
+        raise SystemExit(1)
+
+    artifacts: dict[str, str | None] = {}
+    if pdf:
+        artifacts["pdf"] = pdf
+    if html:
+        artifacts["html"] = html
+    if code:
+        artifacts["code"] = code
+
+    entry = PubEntry(
+        slug=slug,
+        title=title,
+        status=status,
+        type=pub_type,
+        venue=venue,
+        doi=doi,
+        arxiv_id=arxiv_id,
+        artifacts=artifacts,
+        source_repo=source_repo,
+        timeline=[{"event": "created", "date": str(date.today())}],
+    )
+
+    if dry_run:
+        console.print(f"[dim][dry-run] Would add: {slug}[/dim]")
+        console.print(json_module.dumps({"slug": slug, **entry.to_dict()}, indent=2))
+        return
+
+    db.set(entry)
+    db.save()
+    console.print(f"[green]Added publication: {slug}[/green]")
+
+
+@pubs.command()
+@click.argument("slug")
+@click.option("--title", help="Update title")
+@click.option("--status", help=f"Update status: {', '.join(sorted(VALID_STATUSES))}")
+@click.option("--type", "pub_type", help=f"Update type: {', '.join(sorted(VALID_TYPES))}")
+@click.option("--venue", help="Update venue")
+@click.option("--doi", help="Update DOI")
+@click.option("--arxiv", "arxiv_id", help="Update arXiv ID")
+@click.option("--pdf", help="Update PDF artifact")
+@click.option("--html", help="Update HTML artifact")
+@click.option("--slides", help="Update slides artifact")
+@click.option("--poster", help="Update poster artifact")
+@click.option("--video", help="Update video artifact")
+@click.option("--photos", help="Update photos artifact")
+@click.option("--code", help="Update code artifact")
+@click.option("--bibtex", help="Update BibTeX artifact")
+@click.pass_obj
+def update(
+    ctx,
+    slug: str,
+    title: str | None,
+    status: str | None,
+    pub_type: str | None,
+    venue: str | None,
+    doi: str | None,
+    arxiv_id: str | None,
+    pdf: str | None,
+    html: str | None,
+    slides: str | None,
+    poster: str | None,
+    video: str | None,
+    photos: str | None,
+    code: str | None,
+    bibtex: str | None,
+) -> None:
+    """Update fields on an existing publication.
+
+    \b
+    Examples:
+        mf pubs update my-paper --status accepted
+        mf pubs update my-paper --pdf https://example.com/paper.pdf
+        mf pubs update my-paper --doi 10.1234/example
+    """
+    dry_run = ctx.dry_run if ctx else False
+
+    if status is not None and status not in VALID_STATUSES:
+        console.print(f"[red]Invalid status '{status}'. Valid: {sorted(VALID_STATUSES)}[/red]")
+        raise SystemExit(1)
+    if pub_type is not None and pub_type not in VALID_TYPES:
+        console.print(f"[red]Invalid type '{pub_type}'. Valid: {sorted(VALID_TYPES)}[/red]")
+        raise SystemExit(1)
+
+    db = _load_db()
+    entry = db.get(slug)
+    if entry is None:
+        console.print(f"[red]Publication not found: {slug}[/red]")
+        raise SystemExit(1)
+
+    if title is not None:
+        entry.title = title
+    if status is not None:
+        entry.status = status
+    if pub_type is not None:
+        entry.type = pub_type
+    if venue is not None:
+        entry.venue = venue
+    if doi is not None:
+        entry.doi = doi
+    if arxiv_id is not None:
+        entry.arxiv_id = arxiv_id
+
+    # Artifact updates
+    artifact_map = {
+        "pdf": pdf,
+        "html": html,
+        "slides": slides,
+        "poster": poster,
+        "video": video,
+        "photos": photos,
+        "code": code,
+        "bibtex": bibtex,
+    }
+    for key, val in artifact_map.items():
+        if val is not None:
+            entry.artifacts[key] = val
+
+    if dry_run:
+        console.print(f"[dim][dry-run] Would update: {slug}[/dim]")
+        console.print(json_module.dumps({"slug": slug, **entry.to_dict()}, indent=2))
+        return
+
+    db.set(entry)
+    db.save()
+    console.print(f"[green]Updated publication: {slug}[/green]")
+
+
+@pubs.command()
+@click.argument("slug")
+@click.option("--event", required=True, help="Event label (e.g. 'submitted', 'revision-requested')")
+@click.option("--note", help="Optional note for this event")
+@click.option("--date", "event_date", default=None,
+              help="Event date (YYYY-MM-DD, defaults to today)")
+@click.pass_obj
+def log(ctx, slug: str, event: str, note: str | None, event_date: str | None) -> None:
+    """Append a timeline event to a publication.
+
+    \b
+    Examples:
+        mf pubs log my-paper --event submitted
+        mf pubs log my-paper --event "revision-requested" --note "Reviewer 2 wants more experiments"
+        mf pubs log my-paper --event accepted --date 2025-03-15
+    """
+    dry_run = ctx.dry_run if ctx else False
+
+    db = _load_db()
+    entry = db.get(slug)
+    if entry is None:
+        console.print(f"[red]Publication not found: {slug}[/red]")
+        raise SystemExit(1)
+
+    timeline_entry: dict = {
+        "event": event,
+        "date": event_date or str(date.today()),
+    }
+    if note:
+        timeline_entry["note"] = note
+
+    if dry_run:
+        console.print(f"[dim][dry-run] Would append timeline event to {slug}: {timeline_entry}[/dim]")
+        return
+
+    entry.timeline.append(timeline_entry)
+    db.set(entry)
+    db.save()
+    console.print(f"[green]Logged event '{event}' on {slug}[/green]")
+
+
+@pubs.command()
+@click.option("--slug", help="Generate only a specific publication (by slug)")
+@click.option("--force", is_flag=True, help="Overwrite existing files completely")
+@click.pass_obj
+def generate(ctx, slug: str | None, force: bool) -> None:
+    """Generate publication content from pubs_db.
+
+    Creates/updates content/publications/ markdown files.
+
+    \b
+    Examples:
+        mf pubs generate
+        mf pubs generate --slug my-paper
+        mf pubs generate --force
+    """
+    from mf.publications.generate import generate_publications
+
+    dry_run = ctx.dry_run if ctx else False
+    generate_publications(slug=slug, dry_run=dry_run, force=force)
+
+
+@pubs.command()
+@click.pass_obj
+def migrate(ctx) -> None:
+    """Migrate legacy paper_db.json entries into pubs_db.json.
+
+    Reads from PaperDatabase and populates PubsDatabase.
+    Will not overwrite entries that already exist in pubs_db.json.
+    """
+    db = _load_db()
+    if len(db) > 0:
+        console.print(
+            f"[yellow]pubs_db already contains {len(db)} entries. "
+            "Run `mf pubs migrate` only on an empty database.[/yellow]"
+        )
+        console.print("To proceed, back up and delete pubs_db.json first.")
+        raise SystemExit(1)
+
+    try:
+        from mf.publications.migrate import migrate_paper_db
+    except ImportError:
+        console.print("[red]migrate module not available (mf.publications.migrate not found)[/red]")
+        raise SystemExit(1)
+
+    paths = get_paths()
+    migrate_paper_db(paper_db_path=paths.paper_db, pubs_db_path=paths.pubs_db)
+
+
+@pubs.command()
+@click.pass_obj
+def stats(ctx) -> None:
+    """Show publication statistics by status, type, and venue.
+
+    \b
+    Examples:
+        mf pubs stats
+    """
+    db = _load_db()
+
+    status_counts: dict[str, int] = {}
+    type_counts: dict[str, int] = {}
     venue_counts: dict[str, int] = {}
 
     for slug in db:
         entry = db.get(slug)
-        if not entry:
+        if entry is None:
             continue
+        status_counts[entry.status] = status_counts.get(entry.status, 0) + 1
+        type_counts[entry.type] = type_counts.get(entry.type, 0) + 1
+        if entry.venue:
+            venue_counts[entry.venue] = venue_counts.get(entry.venue, 0) + 1
 
-        total_papers += 1
+    total = len(db)
+    lines = [f"[cyan]Total publications:[/cyan] {total}"]
 
-        if is_publication(entry):
-            publications += 1
-            venue = entry.data.get("venue")
-            if venue:
-                venue_counts[venue] = venue_counts.get(venue, 0) + 1
+    if status_counts:
+        lines.append("\n[bold]By status:[/bold]")
+        for s, count in sorted(status_counts.items(), key=lambda x: -x[1]):
+            lines.append(f"  {s}: {count}")
 
-    unpublished = total_papers - publications
-
-    content = f"""[cyan]Publications:[/cyan] {publications}
-[cyan]Unpublished papers:[/cyan] {unpublished}
-[cyan]Total in database:[/cyan] {total_papers}"""
+    if type_counts:
+        lines.append("\n[bold]By type:[/bold]")
+        for t, count in sorted(type_counts.items(), key=lambda x: -x[1]):
+            lines.append(f"  {t}: {count}")
 
     if venue_counts:
-        content += "\n\n[bold]By venue:[/bold]"
-        for venue, count in sorted(venue_counts.items(), key=lambda x: -x[1]):
-            venue_display = venue[:50] + "..." if len(venue) > 50 else venue
-            content += f"\n  {venue_display}: {count}"
+        lines.append("\n[bold]By venue:[/bold]")
+        for v, count in sorted(venue_counts.items(), key=lambda x: -x[1]):
+            v_display = v[:50] + "..." if len(v) > 50 else v
+            lines.append(f"  {v_display}: {count}")
 
-    console.print(Panel(content, title="Publication Statistics"))
-
-
-@pubs.command(name="categories")
-@click.option("--all", "show_all", is_flag=True, help="Include unpublished papers")
-def list_categories(show_all: bool) -> None:
-    """List publication categories."""
-    from mf.core.database import PaperDatabase
-
-    db = PaperDatabase()
-    db.load()
-
-    # Count by category (publications only by default)
-    category_counts: dict[str, int] = {}
-    for slug in db:
-        entry = db.get(slug)
-        if not entry:
-            continue
-        if not show_all and not is_publication(entry):
-            continue
-        cat = entry.data.get("category", "uncategorized")
-        category_counts[cat] = category_counts.get(cat, 0) + 1
-
-    if not category_counts:
-        console.print("[yellow]No categories found[/yellow]")
-        return
-
-    title = "All Paper Categories" if show_all else "Publication Categories"
-    console.print(f"[bold]{title}:[/bold]")
-    for cat, count in sorted(category_counts.items(), key=lambda x: -x[1]):
-        console.print(f"  {cat}: {count}")
-
-
-@pubs.command(name="tags")
-@click.option("--all", "show_all", is_flag=True, help="Include unpublished papers")
-def list_tags(show_all: bool) -> None:
-    """List publication tags."""
-    from mf.core.database import PaperDatabase
-
-    db = PaperDatabase()
-    db.load()
-
-    # Count tags (publications only by default)
-    tag_counts: dict[str, int] = {}
-    for slug in db:
-        entry = db.get(slug)
-        if not entry:
-            continue
-        if not show_all and not is_publication(entry):
-            continue
-        for tag in entry.data.get("tags", []):
-            tag_counts[tag] = tag_counts.get(tag, 0) + 1
-
-    if not tag_counts:
-        console.print("[yellow]No tags found[/yellow]")
-        return
-
-    title = "All Paper Tags" if show_all else "Publication Tags"
-    console.print(f"[bold]{title}:[/bold]")
-    for tag, count in sorted(tag_counts.items(), key=lambda x: -x[1])[:30]:
-        console.print(f"  {tag}: {count}")
-
-    if len(tag_counts) > 30:
-        console.print(f"  [dim]... and {len(tag_counts) - 30} more[/dim]")
-
-
-@pubs.command(name="preprints")
-@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def list_preprints(as_json: bool) -> None:
-    """List preprints (arXiv papers)."""
-    import json as json_module
-
-    from mf.core.database import PaperDatabase
-
-    db = PaperDatabase()
-    db.load()
-
-    results = []
-    for slug in db:
-        entry = db.get(slug)
-        if not entry:
-            continue
-        if is_preprint(entry):
-            results.append(entry)
-
-    if as_json:
-        output = [
-            {
-                "slug": entry.slug,
-                "title": entry.title,
-                "arxiv_id": entry.data.get("arxiv_id"),
-                "date": entry.date,
-            }
-            for entry in results
-        ]
-        console.print(json_module.dumps(output, indent=2))
-        return
-
-    if not results:
-        console.print("[yellow]No preprints found[/yellow]")
-        return
-
-    table = Table(title=f"Preprints ({len(results)} found)")
-    table.add_column("Slug", style="cyan")
-    table.add_column("Title")
-    table.add_column("arXiv ID", style="green")
-    table.add_column("Date", style="dim")
-
-    for entry in sorted(results, key=lambda e: e.date or "", reverse=True):
-        table.add_row(
-            entry.slug,
-            entry.title[:45] + "..." if len(entry.title) > 45 else entry.title,
-            entry.data.get("arxiv_id", ""),
-            entry.date or "",
-        )
-
-    console.print(table)
+    console.print(Panel("\n".join(lines), title="Publication Statistics"))
