@@ -12,6 +12,7 @@ from rich.panel import Panel
 from rich.syntax import Syntax
 from rich.table import Table
 
+from mf.core.config import get_paths
 from mf.publications.database import VALID_STATUSES, VALID_TYPES, PubEntry, PubsDatabase
 
 console = Console()
@@ -399,8 +400,6 @@ def migrate(ctx) -> None:
     Reads from PaperDatabase and populates PubsDatabase.
     Will not overwrite entries that already exist in pubs_db.json.
     """
-    dry_run = ctx.dry_run if ctx else False
-
     db = _load_db()
     if len(db) > 0:
         console.print(
@@ -416,7 +415,8 @@ def migrate(ctx) -> None:
         console.print("[red]migrate module not available (mf.publications.migrate not found)[/red]")
         raise SystemExit(1)
 
-    migrate_paper_db(dry_run=dry_run)
+    paths = get_paths()
+    migrate_paper_db(paper_db_path=paths.paper_db, pubs_db_path=paths.pubs_db)
 
 
 @pubs.command()
