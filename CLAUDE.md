@@ -36,11 +36,11 @@ Test config is in `pyproject.toml` under `[tool.pytest.ini_options]` — `testpa
 
 | Module | Purpose | Database |
 |--------|---------|----------|
-| `papers/` | LaTeX → Hugo paper pages | `paper_db.json` |
+| `papers/` | Ingest pre-built paper artifacts → Hugo paper pages | `paper_db.json` |
 | `projects/` | GitHub repos → Hugo project pages | `projects_db.json` + `cache/projects.json` |
 | `series/` | External repo blog series → Hugo series pages | `series_db.json` |
 | `packages/` | PyPI/CRAN registry → Hugo package pages | `packages_db.json` |
-| `publications/` | Curated peer-reviewed subset of papers | Uses `paper_db.json` |
+| `publications/` | Scholarly publication registry with lifecycle tracking | `pubs_db.json` |
 | `posts/` | Blog post front matter management | None (reads Hugo files directly) |
 | `content/` | Cross-content linking, auditing, scanning | None |
 | `taxonomy/` | Tag/category hygiene | None |
@@ -70,7 +70,7 @@ Command groups: `papers`, `projects`, `series`, `packages`, `pubs`, `posts`, `co
 
 ### Key Patterns
 
-**Database-backed modules** (papers, projects, series, packages) all share: `commands.py` (Click CLI), `field_ops.py` (schema), `generator.py` (Hugo content output), plus domain-specific files. The `set`/`unset`/`feature`/`tag` commands use shared infrastructure from `core/field_ops.py`.
+**Database-backed modules** (papers, projects, series, packages, publications) all share: `commands.py` (Click CLI), `generator.py` (Hugo content output), plus domain-specific files. Papers, projects, series, and packages also have `field_ops.py` (schema) with shared `set`/`unset`/`feature`/`tag` commands from `core/field_ops.py`. Publications use a standalone `PubsDatabase` with `PubEntry` dataclass (validated fields, lifecycle tracking).
 
 **Posts are database-free:** `mf posts` reads and writes Hugo front matter directly via `ContentScanner` and `FrontMatterEditor`. No `.mf/*.json` involved.
 
@@ -85,15 +85,20 @@ All `mf` data lives in `.mf/` at the Hugo site root (not in this repo):
 ```
 .mf/
   paper_db.json         projects_db.json      series_db.json      packages_db.json
+  pubs_db.json
   config.yaml
   cache/projects.json   (gitignored)
-  backups/{papers,projects,series,packages}/
+  backups/{papers,projects,series,packages,pubs}/
   registries/           (user-provided adapter overrides)
 ```
 
 ### Papers vs Publications
 
-`/papers/` = all papers (preprints, drafts, published). `/publications/` = curated subset (peer-reviewed only, filtered by `status: "published"`, venue, or DOI). Both generated from `paper_db.json` but with different front matter schemas — papers use `pdf_file` (filename), publications use `pdf` (full path).
+`/papers/` and `/publications/` are **independent modules with separate databases**.
+
+- **Papers** (`paper_db.json`) track source files and build artifacts. `mf papers ingest` copies pre-built HTML/PDF from paper repos into `/static/latex/{slug}/`. `mf papers generate` creates Hugo content from the artifacts. Papers cover all papers regardless of publication status.
+
+- **Publications** (`pubs_db.json`) are a scholarly registry with lifecycle tracking (draft → submitted → published), artifact URLs, timeline events, and venue metadata. `mf pubs generate` creates Hugo content from `pubs_db.json`. The two databases can share slugs but neither depends on the other at runtime. `mf pubs migrate` is a one-time tool to seed `pubs_db.json` from legacy `paper_db.json` entries.
 
 ## Testing
 

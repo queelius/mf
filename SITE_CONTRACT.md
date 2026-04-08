@@ -196,36 +196,40 @@ The **homepage** (`layouts/index.html`) shows the top 6 papers sorted by `stars`
 
 ### Publications
 
-**What `mf` generates** (`publications/generate.py`):
+**What `mf` generates** (`publications/generate.py`, reads from `pubs_db.json`):
 
 ```yaml
 title: "Paper Title"
 abstract: "..."
 authors:
   - name: "Author Name"       # Note: dict format, not plain string
+    email: "optional@email.com"
 date: "2024-01-15T00:00:00Z"
 tags: [statistics]
 
 publication:                   # Nested under publication:
-  type: "journal"
-  venue: "Journal Name"
+  type: "journal article"
   status: "published"
+  venue: "Journal Name"
   doi: "10.1234/example"
+  arxiv: "2301.12345"
   year: 2024
+
+artifacts:                     # Structured artifact map
+  pdf: "/latex/slug/paper.pdf"
+  html: "/latex/slug/"
+  code: "https://github.com/user/repo"
+  bibtex: "/latex/slug/cite.bib"
+  slides: "https://example.com/slides"
 
 links:
   - name: "GitHub"
     url: "https://github.com/..."
   - name: "Paper"
     url: "/papers/paper-slug/"
-
-# Asset paths (full paths, not filenames)
-pdf: "/latex/slug/paper.pdf"
-html: "/latex/slug/"
-cite: "/latex/slug/cite.bib"
 ```
 
-Key difference from papers: publications use full paths (`pdf: "/latex/slug/paper.pdf"`) while papers use filenames (`pdf_file: "paper.pdf"`). The theme must handle both patterns.
+Publications use `pubs_db.json` (independent from `paper_db.json`). Artifacts are nested under an `artifacts` key rather than top-level `pdf`/`html`/`cite` fields. The theme should read from `artifacts.*` for new publications.
 
 **What the theme consumes** (`layouts/publications/`):
 

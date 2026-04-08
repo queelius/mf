@@ -87,8 +87,14 @@ mf series set <slug> <field> <value>  # Set a field
 mf series feature <slug>           # Toggle featured
 mf series tag <slug> --add <tag>   # Manage tags
 
-# Publications
-mf pubs sync                       # Sync to paper database
+# Publications (independent pubs_db.json)
+mf pubs list                       # List publications with filters
+mf pubs add <slug> --title "..."   # Add a publication
+mf pubs update <slug> --status published  # Update fields
+mf pubs log <slug> --event accepted --date 2026-04-01  # Timeline event
+mf pubs generate                   # Generate Hugo content from pubs_db
+mf pubs stats                      # Statistics by status/type/venue
+mf pubs migrate                    # One-time migration from paper_db
 
 # Backup management
 mf backup status                   # Show backup statistics
