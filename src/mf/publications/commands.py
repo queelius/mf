@@ -420,6 +420,50 @@ def migrate(ctx) -> None:
 
 
 @pubs.command()
+@click.option("--slug", help="Pull artifacts for a specific publication only")
+@click.option("--type", "artifact_type", help="Pull only this artifact type (e.g. pdf, html, slides)")
+@click.pass_obj
+def pull(ctx, slug: str | None, artifact_type: str | None) -> None:
+    """Pull artifacts from source repos into static/.
+
+    Copies files (PDFs, etc.) from source_repo locations to their
+    target paths in static/. Requires artifacts_source mapping in
+    pubs_db to know where source files live.
+
+    \b
+    Examples:
+        mf pubs pull                    # Pull all artifacts
+        mf pubs pull --type pdf         # Pull only PDFs
+        mf pubs pull --slug my-paper    # Pull artifacts for one pub
+    """
+    from mf.publications.pull import pull_artifacts
+
+    dry_run = ctx.dry_run if ctx else False
+    pull_artifacts(slug=slug, artifact_type=artifact_type, dry_run=dry_run)
+
+
+@pubs.command()
+@click.option("--slug", help="Check a specific publication only")
+@click.option("--type", "artifact_type", help="Check only this artifact type")
+@click.pass_obj
+def check(ctx, slug: str | None, artifact_type: str | None) -> None:
+    """Check which artifacts are present or missing.
+
+    Shows a table of all artifacts with their status in static/ and
+    whether the source file exists.
+
+    \b
+    Examples:
+        mf pubs check
+        mf pubs check --type pdf
+        mf pubs check --slug my-paper
+    """
+    from mf.publications.pull import check_artifacts
+
+    check_artifacts(slug=slug, artifact_type=artifact_type)
+
+
+@pubs.command()
 @click.pass_obj
 def stats(ctx) -> None:
     """Show publication statistics by status, type, and venue.

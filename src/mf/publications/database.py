@@ -54,6 +54,7 @@ class PubEntry:
     arxiv_id: str | None = None
 
     artifacts: dict[str, str | None] = field(default_factory=dict)
+    artifacts_source: dict[str, str] = field(default_factory=dict)
     links: list[dict] = field(default_factory=list)
     timeline: list[dict] = field(default_factory=list)
     source_repo: str | None = None
@@ -89,6 +90,7 @@ class PubEntry:
             doi=data.get("doi"),
             arxiv_id=data.get("arxiv_id"),
             artifacts=data.get("artifacts", {}),
+            artifacts_source=data.get("artifacts_source", {}),
             links=data.get("links", []),
             timeline=data.get("timeline", []),
             source_repo=data.get("source_repo"),
@@ -117,6 +119,8 @@ class PubEntry:
             d["arxiv_id"] = self.arxiv_id
         if self.artifacts:
             d["artifacts"] = self.artifacts
+        if self.artifacts_source:
+            d["artifacts_source"] = self.artifacts_source
         if self.links:
             d["links"] = self.links
         if self.timeline:
