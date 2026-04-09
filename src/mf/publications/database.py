@@ -32,6 +32,36 @@ VALID_TYPES = frozenset({
     "book chapter",
 })
 
+# Documented artifact keys for the artifacts dict.
+# These are conventions, not enforced: any key is allowed, but using these
+# names ensures Hugo templates render the artifact with the right icon/label.
+#
+# Each value is either:
+#   - A site-relative path starting with "/" (e.g., "/latex/foo/paper.pdf")
+#   - A URL starting with "http" (e.g., "https://github.com/...")
+#   - The string "pending" as a placeholder for an artifact not yet available
+ARTIFACT_KEYS = frozenset({
+    # Paper artifacts
+    "pdf",        # The paper PDF (camera-ready or preprint version)
+    "html",       # Web-rendered HTML version of the paper
+    "bibtex",     # BibTeX citation file
+    "supplement", # Supplementary material (appendix, extended proofs)
+    # Presentation artifacts
+    "slides",     # Presentation slides (PDF or URL)
+    "poster",     # Conference poster
+    "video",      # Recorded talk (YouTube, conference recording, etc.)
+    # Reproducibility artifacts
+    "code",       # Code repository URL (GitHub, GitLab, etc.)
+    "data",       # Dataset URL (Zenodo, OSF, figshare, etc.)
+    # Preprint hosting
+    "zenodo",     # Zenodo deposit URL (for citable DOIs)
+    "arxiv",      # arXiv abstract URL (for cs.* preprints)
+    "osf",        # OSF preprints URL
+    "techrxiv",   # TechRxiv URL
+    # Social/media artifacts
+    "photos",     # Conference/event photos (directory or gallery URL)
+})
+
 SPECIAL_KEYS = frozenset({"_schema_version"})
 
 
