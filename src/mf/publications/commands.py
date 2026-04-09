@@ -507,3 +507,179 @@ def stats(ctx) -> None:
             lines.append(f"  {v_display}: {count}")
 
     console.print(Panel("\n".join(lines), title="Publication Statistics"))
+
+
+# ═══════════════════════════════════════════════════════════════════
+# Zenodo subcommands
+# ═══════════════════════════════════════════════════════════════════
+
+
+def _get_zenodo_client():
+    """Get configured Zenodo client. Reuses mf.papers.zenodo infrastructure."""
+    import yaml
+
+    from mf.papers.zenodo import ZenodoClient
+
+    config_path = get_paths().config_file
+    if not config_path.exists():
+        console.print("[red]No .mf/config.yaml found[/red]")
+        raise SystemExit(1)
+
+    try:
+        with open(config_path) as f:
+            config = yaml.safe_load(f.read()) or {}
+    except Exception:
+        config = {}
+
+    zenodo_config = config.get("zenodo", {})
+    api_token = zenodo_config.get("api_token")
+
+    if not api_token:
+        console.print("[red]Zenodo API token not configured![/red]")
+        console.print()
+        console.print("Add to .mf/config.yaml:")
+        console.print("  zenodo:")
+        console.print('    api_token: "your-token-here"')
+        raise SystemExit(1)
+
+    sandbox = bool(zenodo_config.get("sandbox", False))
+    return ZenodoClient(api_token=str(api_token), sandbox=sandbox), sandbox
+
+
+@pubs.group()
+def zenodo() -> None:
+    """Zenodo integration for publications.
+
+    Register publications on Zenodo to mint DOIs.
+    """
+    pass
+
+
+@zenodo.command()
+def test() -> None:
+    """Test Zenodo API connection."""
+    client, sandbox = _get_zenodo_client()
+    mode = "SANDBOX" if sandbox else "PRODUCTION"
+    console.print(f"Testing Zenodo {mode} connection...")
+    if client.test_connection():
+        console.print(f"[green]Connected to Zenodo ({mode})[/green]")
+    else:
+        console.print("[red]Connection failed[/red]")
+        raise SystemExit(1)
+
+
+@zenodo.command()
+@click.argument("slug")
+@click.option("--publish", is_flag=True,
+              help="Actually publish (mint DOI). Without this, dry-run.")
+@click.pass_obj
+def register(ctx, slug: str, publish: bool) -> None:
+    """Register a publication on Zenodo to get a DOI.
+
+    \b
+    By default, runs in dry-run mode showing what would be uploaded.
+    Use --publish to actually create the DOI (irreversible).
+
+    \b
+    Examples:
+        mf pubs zenodo register dreamlog-compression          # Dry run
+        mf pubs zenodo register dreamlog-compression --publish  # Mint DOI
+    """
+    from mf.publications.zenodo import find_pub_pdf, map_pub_to_zenodo_metadata
+
+    dry_run = ctx.dry_run if ctx else False
+    paths = get_paths()
+
+    db = _load_db()
+    entry = db.get(slug)
+    if not entry:
+        console.print(f"[red]Not found: {slug}[/red]")
+        raise SystemExit(1)
+
+    # Check if already registered
+    existing_doi = entry.doi
+    if existing_doi and existing_doi != "pending":
+        console.print(f"[yellow]Already has DOI: {existing_doi}[/yellow]")
+        zenodo_url = entry.artifacts.get("zenodo")
+        if zenodo_url:
+            console.print(f"URL: {zenodo_url}")
+        console.print("Use 'mf pubs zenodo update' to create a new version.")
+        return
+
+    # Find PDF
+    pdf_path = find_pub_pdf(entry, paths.static)
+    if not pdf_path:
+        console.print(f"[red]No PDF found for {slug}[/red]")
+        pdf_artifact = entry.artifacts.get("pdf", "(not set)")
+        console.print(f"  artifacts.pdf = {pdf_artifact}")
+        console.print("  Set with: mf pubs update {slug} --pdf /path/to/paper.pdf")
+        raise SystemExit(1)
+
+    console.print(f"[bold]{slug}[/bold]: {entry.title[:60]}...")
+    console.print(f"  PDF: {pdf_path}")
+
+    # Build metadata
+    metadata = map_pub_to_zenodo_metadata(entry)
+    console.print(f"  Type: {metadata['upload_type']}/{metadata.get('publication_type', '')}")
+    console.print(f"  Creators: {', '.join(c['name'] for c in metadata['creators'])}")
+    console.print(f"  Date: {metadata.get('publication_date', '?')}")
+    if metadata.get("keywords"):
+        console.print(f"  Keywords: {', '.join(metadata['keywords'][:5])}...")
+
+    if not publish or dry_run:
+        console.print()
+        console.print("[yellow]DRY RUN. Use --publish to actually mint the DOI.[/yellow]")
+        return
+
+    # Get client and publish
+    client, sandbox = _get_zenodo_client()
+    if sandbox:
+        console.print("[yellow]Using Zenodo SANDBOX (testing mode)[/yellow]")
+
+    if not client.test_connection():
+        console.print("[red]Failed to connect to Zenodo API[/red]")
+        raise SystemExit(1)
+
+    try:
+        # Create deposit
+        deposit = client.create_deposit()
+        console.print(f"  Created deposit: {deposit.id}")
+
+        # Upload metadata
+        deposit = client.update_metadata(deposit.id, metadata)
+        console.print("  Uploaded metadata")
+
+        # Upload PDF
+        client.upload_file(deposit.id, pdf_path)
+        console.print("  Uploaded PDF")
+
+        # Publish
+        published = client.publish(deposit.id)
+        console.print("  [green]Published![/green]")
+
+        version_doi = published.doi or f"10.5281/zenodo.{published.id}"
+        concept_doi = published.conceptdoi
+        doi_url = published.doi_url or f"https://zenodo.org/records/{published.id}"
+
+        console.print(f"  Version DOI: [cyan]{version_doi}[/cyan]")
+        if concept_doi:
+            console.print(f"  Concept DOI: [cyan]{concept_doi}[/cyan] (latest version)")
+        console.print(f"  URL: {doi_url}")
+
+        # Update pubs_db
+        entry.doi = concept_doi or version_doi
+        entry.artifacts["zenodo"] = doi_url
+        entry.timeline.append({
+            "date": str(date.today()),
+            "event": "zenodo-published",
+            "note": f"DOI: {version_doi}",
+        })
+        db.set(entry)
+        db.save()
+
+        console.print()
+        console.print(f"[green]pubs_db updated: {slug}[/green]")
+
+    except Exception as e:
+        console.print(f"  [red]Error: {e}[/red]")
+        raise SystemExit(1)
