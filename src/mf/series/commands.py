@@ -214,6 +214,57 @@ def show(slug: str, landing: bool) -> None:
             console.print(f"  - [{link.get('name', 'Link')}]({link.get('url', '')})")
 
 
+@series.command(name="audit")
+@click.argument("slug", required=False)
+@click.option("--category",
+              type=click.Choice(["nav", "sync", "source", "structure"]),
+              help="Filter findings by category")
+def audit_cmd(slug: str | None, category: str | None) -> None:
+    """Audit one or all series for drift and health issues.
+
+    Reports findings without modifying anything. Categories:
+
+    \b
+      nav       - mkdocs.yml nav vs post directory drift
+      sync      - orphan sync state, stale syncs
+      source    - missing source_dir, posts subdir, landing page
+      structure - missing source configuration
+
+    \b
+    Examples:
+        mf series audit                    # audit all series
+        mf series audit stepanov           # audit one series
+        mf series audit --category nav     # only nav drift
+    """
+    from mf.series.audit import run_full_audit, print_reports
+
+    reports = run_full_audit(slug=slug)
+    print_reports(reports, category_filter=category)
+
+
+@series.command(name="audit-nav")
+@click.argument("slug", required=False)
+def audit_nav_cmd(slug: str | None) -> None:
+    """Audit mkdocs nav vs post directory for drift.
+
+    Shorthand for `mf series audit --category nav`.
+
+    \b
+    Reports:
+      - Posts on disk but missing from mkdocs nav (unreachable from sidebar)
+      - Posts in mkdocs nav but missing from disk (broken links → 404)
+
+    \b
+    Examples:
+        mf series audit-nav            # audit all series
+        mf series audit-nav stepanov   # audit one series
+    """
+    from mf.series.audit import run_full_audit, print_reports
+
+    reports = run_full_audit(slug=slug)
+    print_reports(reports, category_filter="nav")
+
+
 @series.command()
 @click.option("--include-orphans", is_flag=True, help="Show posts with series not in DB")
 def scan(include_orphans: bool) -> None:
