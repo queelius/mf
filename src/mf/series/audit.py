@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
 from pathlib import Path
 
 import yaml
@@ -21,8 +20,6 @@ from mf.core.config import get_paths
 from mf.core.database import SeriesDatabase, SeriesEntry
 
 console = Console()
-
-STALE_DAYS = 30
 
 
 @dataclass
@@ -168,7 +165,14 @@ def audit_source(entry: SeriesEntry, source_dir: Path) -> list[AuditFinding]:
 
 
 def audit_sync_state(entry: SeriesEntry, source_dir: Path) -> list[AuditFinding]:
-    """Check sync state for orphans and staleness."""
+    """Check sync state for divergence between source and blog.
+
+    Distinguishes four cases per tracked post:
+      both missing     -> orphan; safe to clean from _sync_state
+      blog only        -> source removed it; user decision (keep or delete)
+      source only      -> never synced to blog; run `mf series sync`
+      both present     -> normal (no finding)
+    """
     findings: list[AuditFinding] = []
     posts_subdir = entry.posts_subdir or "post"
     post_dir = source_dir / posts_subdir
@@ -177,14 +181,12 @@ def audit_sync_state(entry: SeriesEntry, source_dir: Path) -> list[AuditFinding]
     blog_post_dir = paths.posts
 
     sync_state = entry.sync_state
+    blog_only: list[str] = []
+    source_only: list[str] = []
 
-    cutoff = datetime.now() - timedelta(days=STALE_DAYS)
-    stale_count = 0
-
-    for slug, state in sync_state.items():
+    for slug, _ in sync_state.items():
         if slug.startswith("_"):
             continue
-        # Orphan: in sync state but neither side has the file
         in_source = slug in disk
         in_blog = (blog_post_dir / slug / "index.md").exists()
         if not in_source and not in_blog:
@@ -193,26 +195,28 @@ def audit_sync_state(entry: SeriesEntry, source_dir: Path) -> list[AuditFinding]
                 category="sync",
                 series=entry.slug,
                 message=f"orphan sync state: {slug}",
-                detail="post missing from both source and blog; clean from _sync_state",
+                detail="missing from both source and blog; clean from _sync_state",
             ))
-            continue
-        # Staleness check
-        last_synced_str = state.get("last_synced", "")
-        if last_synced_str:
-            try:
-                last_synced = datetime.fromisoformat(last_synced_str)
-                if last_synced < cutoff:
-                    stale_count += 1
-            except ValueError:
-                pass
+        elif not in_source and in_blog:
+            blog_only.append(slug)
+        elif in_source and not in_blog:
+            source_only.append(slug)
 
-    if stale_count:
+    for slug in blog_only:
         findings.append(AuditFinding(
-            severity="info",
+            severity="warn",
             category="sync",
             series=entry.slug,
-            message=f"{stale_count} post(s) not synced in >{STALE_DAYS} days",
-            detail="run `mf series sync <slug>` to refresh",
+            message=f"removed from source: {slug}",
+            detail="still in blog; delete from blog or accept divergence",
+        ))
+    for slug in source_only:
+        findings.append(AuditFinding(
+            severity="warn",
+            category="sync",
+            series=entry.slug,
+            message=f"never pulled to blog: {slug}",
+            detail="run `mf series sync` to import from source",
         ))
     return findings
 
