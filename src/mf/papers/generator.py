@@ -10,7 +10,7 @@ from pathlib import Path
 
 from rich.console import Console
 
-from mf.core.config import get_paths
+from mf.core.config import SitePaths, get_paths
 from mf.core.database import PaperDatabase
 from mf.papers.metadata import extract_from_html, extract_from_pdf
 from mf.papers.templates import PAPER_TEMPLATE, PDF_ONLY_TEMPLATE, render_paper_frontmatter
@@ -147,73 +147,44 @@ def extract_paper_metadata(slug: str, paper_dir: Path) -> dict:
     return metadata
 
 
-def generate_paper_content(
-    slug: str,
-    db: PaperDatabase,
-    use_image_cache: bool = True,
-    dry_run: bool = False,
-) -> bool:
-    """Generate Hugo content for a single paper.
+def render_paper_page(
+    slug: str, db: PaperDatabase, *, extracted: dict | None = None
+) -> str | None:
+    """Render the index.md text for a paper. Pure: reads only, no writes, no mtime.
 
-    Args:
-        slug: Paper slug
-        db: Paper database (must be loaded)
-        use_image_cache: Skip thumbnail generation if exists
-        dry_run: Preview only
-
-    Returns:
-        True if successful
+    Returns None when the paper has no HTML or PDF artifacts.
     """
     paths = get_paths()
     paper_dir = paths.latex / slug
-
     if not paper_dir.exists():
-        console.print(f"  [red]Paper directory not found: {paper_dir}[/red]")
-        return False
+        return None
 
-    # Check for HTML or PDF
     html_file = find_html_file(paper_dir)
     pdf_file = find_pdf_file(paper_dir)
-
     if not html_file and not pdf_file:
-        console.print(f"  [red]No HTML or PDF found for {slug}[/red]")
-        return False
+        return None
 
-    # Determine if PDF-only
     is_pdf_only = not html_file and pdf_file
-
-    # Extract metadata from files
-    extracted = extract_paper_metadata(slug, paper_dir)
-
-    # Get manual overrides from database
+    if extracted is None:
+        extracted = extract_paper_metadata(slug, paper_dir)
     entry = db.get(slug)
     manual = entry.data if entry else {}
-
-    # Merge: manual overrides take precedence
     metadata = {**extracted, **manual}
 
-    # Ensure required fields
     if not metadata.get("title"):
         metadata["title"] = slug.replace("-", " ").title()
+    # No mtime fallback here: render stays deterministic. render_paper_frontmatter
+    # supplies a static default date when none is stored. The write path pins a
+    # real date into paper_db so it is stable thereafter.
 
-    if not metadata.get("date"):
-        # Use file modification time as fallback
-        import datetime
-        mtime = paper_dir.stat().st_mtime
-        metadata["date"] = datetime.datetime.fromtimestamp(mtime).strftime("%Y-%m-%d")
-
-    # PDF info
     pdf_filename = pdf_file.name if pdf_file else ""
     pdf_size = format_file_size(pdf_file.stat().st_size) if pdf_file else ""
     page_count = metadata.get("page_count", 0)
 
-    # Generate thumbnail if needed
-    if pdf_file and HAS_PDF2IMAGE:
-        thumb_path = paper_dir / "thumbnail.jpg"
-        if (not thumb_path.exists() or not use_image_cache) and generate_thumbnail(pdf_file, thumb_path, dry_run=dry_run):
-                metadata["image"] = f"/latex/{slug}/thumbnail.jpg"
+    thumb_path = paper_dir / "thumbnail.jpg"
+    if thumb_path.exists():
+        metadata["image"] = f"/latex/{slug}/thumbnail.jpg"
 
-    # Render frontmatter
     vars = render_paper_frontmatter(
         slug=slug,
         metadata=metadata,
@@ -221,12 +192,56 @@ def generate_paper_content(
         pdf_size=pdf_size,
         page_count=page_count,
     )
-
-    # Select template
     template = PDF_ONLY_TEMPLATE if is_pdf_only else PAPER_TEMPLATE
-    content = template.format(**vars)
+    return template.format(**vars)
 
-    # Write content file
+
+def generate_paper_content(
+    slug: str,
+    db: PaperDatabase,
+    use_image_cache: bool = True,
+    dry_run: bool = False,
+) -> bool:
+    """Generate Hugo content for a single paper (pin date, thumbnail, render, write)."""
+    paths = get_paths()
+    paper_dir = paths.latex / slug
+
+    if not paper_dir.exists():
+        console.print(f"  [red]Paper directory not found: {paper_dir}[/red]")
+        return False
+
+    html_file = find_html_file(paper_dir)
+    pdf_file = find_pdf_file(paper_dir)
+    if not html_file and not pdf_file:
+        console.print(f"  [red]No HTML or PDF found for {slug}[/red]")
+        return False
+
+    # Pin a stable date into paper_db once, so render stays deterministic and
+    # date-less papers do not regress to the static placeholder. This CREATES a
+    # paper_db.json entry for the paper if one does not already exist, and saves
+    # so the pin is durable across runs (without it, every run re-pins from mtime).
+    extracted = extract_paper_metadata(slug, paper_dir)
+    entry = db.get(slug)
+    has_date = bool(entry and entry.data.get("date")) or bool(extracted.get("date"))
+    if not has_date and not dry_run:
+        import datetime
+
+        mtime = paper_dir.stat().st_mtime
+        pinned = datetime.datetime.fromtimestamp(mtime).strftime("%Y-%m-%d")
+        db.update(slug, date=pinned)
+        db.save()
+
+    # Thumbnail generation is a write side effect; keep it out of render.
+    if pdf_file and HAS_PDF2IMAGE:
+        thumb_path = paper_dir / "thumbnail.jpg"
+        if not thumb_path.exists() or not use_image_cache:
+            generate_thumbnail(pdf_file, thumb_path, dry_run=dry_run)
+
+    content = render_paper_page(slug, db, extracted=extracted)
+    if content is None:
+        console.print(f"  [red]Nothing to render for {slug}[/red]")
+        return False
+
     content_dir = paths.papers / slug
     content_file = content_dir / "index.md"
 
@@ -237,7 +252,6 @@ def generate_paper_content(
     content_dir.mkdir(parents=True, exist_ok=True)
     content_file.write_text(content, encoding="utf-8")
     console.print(f"  [green]✓[/green] Generated: {content_file}")
-
     return True
 
 
@@ -295,3 +309,35 @@ def generate_papers(
     if failed:
         console.print(f"[red]Failed:[/red] {failed}")
     console.print("=" * 60)
+
+
+class PapersRenderer:
+    """Renderer binding for the render-drift engine.
+
+    Slugs come from /static/latex/<slug>/ (the artifact dirs), matching how
+    generate_papers iterates.
+    """
+
+    section = "papers"
+
+    def __init__(self, db: PaperDatabase, paths: SitePaths) -> None:
+        self._db = db
+        self._paths = paths
+
+    def iter_slugs(self) -> list[str]:
+        d = self._paths.latex
+        if not d.exists():
+            return []
+        return [p.name for p in d.iterdir() if p.is_dir() and not p.name.startswith(".")]
+
+    def existing_slugs(self) -> list[str]:
+        d = self._paths.papers
+        if not d.exists():
+            return []
+        return [p.name for p in d.iterdir() if (p / "index.md").exists()]
+
+    def hugo_path(self, slug: str) -> Path:
+        return self._paths.papers / slug / "index.md"
+
+    def render_page(self, slug: str) -> str | None:
+        return render_paper_page(slug, self._db)

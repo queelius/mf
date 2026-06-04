@@ -67,11 +67,50 @@ def generate(ctx, slug: str | None, no_image_cache: bool) -> None:
     """Generate Hugo content from /static/latex/.
 
     Reads paper metadata and generates content/papers/ markdown files.
+    Papers with no date in their metadata get the artifact directory mtime pinned
+    into paper_db.json on first generate (creating an entry if needed) so the date
+    stays stable.
     """
+    dry_run = ctx.dry_run if ctx else False
+    if dry_run:
+        from mf.core.config import get_paths
+        from mf.core.database import PaperDatabase
+        from mf.core.drift import print_dry_run_preview
+        from mf.papers.generator import PapersRenderer
+
+        db = PaperDatabase()
+        db.load()
+        renderer = PapersRenderer(db, get_paths())
+        print_dry_run_preview(renderer, console=console, only_slug=slug)
+        return
+
     from mf.papers.generator import generate_papers
 
-    dry_run = ctx.dry_run if ctx else False
-    generate_papers(slug=slug, use_image_cache=not no_image_cache, dry_run=dry_run)
+    generate_papers(slug=slug, use_image_cache=not no_image_cache, dry_run=False)
+
+
+@papers.command(name="diff")
+@click.argument("slug", required=False)
+@click.option("--full", is_flag=True, help="Show a unified diff for each drifted page")
+@click.pass_obj
+def diff(ctx, slug: str | None, full: bool) -> None:
+    """Show what `mf papers generate` would change (read-only).
+
+    \b
+    Examples:
+        mf papers diff
+        mf papers diff my-paper
+        mf papers diff --full
+    """
+    from mf.core.config import get_paths
+    from mf.core.database import PaperDatabase
+    from mf.core.drift import run_diff_command
+    from mf.papers.generator import PapersRenderer
+
+    db = PaperDatabase()
+    db.load()
+    renderer = PapersRenderer(db, get_paths())
+    run_diff_command(renderer, console=console, slug=slug, full=full)
 
 
 @papers.command(name="list")
