@@ -10,12 +10,12 @@ Supports two modes:
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from rich.console import Console
 
-from mf.core.config import get_paths
+from mf.core.config import SitePaths, get_paths
 from mf.core.database import ProjectsCache, ProjectsDatabase
 from mf.projects.readme import rewrite_readme_urls
 
@@ -134,8 +134,7 @@ def generate_project_frontmatter(
     github_url = metadata.get("github_url", "")
 
     # Build frontmatter
-    default_date = datetime.now(timezone.utc).isoformat()
-    created_at = github_data.get("created_at", default_date)
+    created_at = github_data.get("created_at", "")
 
     lines = [
         "---",
@@ -187,7 +186,7 @@ def generate_project_frontmatter(
         "project:",
         '  status: "active"',
         f'  type: "{category}"',
-        f"  year_started: {created_at[:4] if created_at else datetime.now().year}",
+        f"  year_started: {created_at[:4] if created_at else ''}",
     ])
 
     # Tech section
@@ -321,58 +320,41 @@ weight: {weight}
 """
 
 
-def generate_project_content(
-    slug: str,
-    metadata: dict[str, Any],
-    dry_run: bool = False,
-) -> bool:
-    """Generate Hugo content for a single project.
-
-    Generates either:
-    - Leaf bundle (index.md) for simple projects
-    - Branch bundle (_index.md + sections) for rich projects
-
-    Args:
-        slug: Project slug
-        metadata: Merged project metadata
-        dry_run: Preview only
-
-    Returns:
-        True if successful
-    """
-    paths = get_paths()
+def render_project_page(slug: str, metadata: dict[str, Any]) -> str:
+    """Render the primary project page (index.md or _index.md). Pure, deterministic."""
     github_data = metadata.get("github_data", {})
-
-    # Check if this is a rich project (branch bundle)
     is_rich = metadata.get("rich_project", False)
-    content_sections = metadata.get("content_sections", [])
 
-    # README: Use manual override if present, otherwise use GitHub README
-    readme_content = metadata.get(
-        "readme_override",
-        github_data.get("_readme_content", "")
-    )
-
-    # Rewrite relative URLs in GitHub README (not manual overrides)
+    readme_content = metadata.get("readme_override", github_data.get("_readme_content", ""))
     if readme_content and not metadata.get("readme_override"):
         html_url = github_data.get("html_url", "")
         default_branch = github_data.get("default_branch", "main")
         if html_url:
-            readme_content = rewrite_readme_urls(
-                readme_content, html_url, default_branch
-            )
+            readme_content = rewrite_readme_urls(readme_content, html_url, default_branch)
 
-    # Generate frontmatter
     frontmatter = generate_project_frontmatter(slug, metadata, is_branch_bundle=is_rich)
-
-    # Build content
     content = frontmatter
     if readme_content:
         content += readme_content + "\n"
     elif metadata.get("abstract"):
         content += metadata["abstract"] + "\n"
+    return content
 
-    # Determine content file name based on bundle type
+
+def generate_project_content(
+    slug: str,
+    metadata: dict[str, Any],
+    dry_run: bool = False,
+) -> bool:
+    """Generate Hugo content for a single project (render primary page + write + stubs)."""
+    paths = get_paths()
+    github_data = metadata.get("github_data", {})
+
+    is_rich = metadata.get("rich_project", False)
+    content_sections = metadata.get("content_sections", [])
+
+    content = render_project_page(slug, metadata)
+
     if is_rich:
         content_path = paths.projects / slug / "_index.md"
     else:
@@ -390,12 +372,10 @@ def generate_project_content(
     content_path.write_text(content, encoding="utf-8")
     console.print(f"  [green]✓[/green] Generated: {content_path}")
 
-    # Generate section pages for rich projects
     if is_rich and content_sections:
         project_title = metadata.get("title", github_data.get("name", slug))
         for section in content_sections:
             section_path = paths.projects / slug / section / "_index.md"
-            # Only create if doesn't exist (preserve manual edits)
             if not section_path.exists():
                 section_path.parent.mkdir(parents=True, exist_ok=True)
                 section_content = generate_section_frontmatter(section, project_title)
@@ -456,3 +436,54 @@ def generate_all_projects(
             failed += 1
 
     return success, failed
+
+
+class ProjectsRenderer:
+    """Renderer binding for the render-drift engine.
+
+    Slugs come from the GitHub cache, minus hidden projects. The primary page
+    is _index.md for rich projects and index.md otherwise.
+    """
+
+    section = "projects"
+
+    def __init__(self, cache: ProjectsCache, db: ProjectsDatabase, paths: SitePaths) -> None:
+        self._cache = cache
+        self._db = db
+        self._paths = paths
+
+    def _is_rich(self, slug: str) -> bool:
+        overrides = self._db.get(slug) or {}
+        return bool(overrides.get("rich_project", False))
+
+    def _is_hidden(self, slug: str) -> bool:
+        overrides = self._db.get(slug) or {}
+        return bool(overrides.get("hide", False))
+
+    def iter_slugs(self) -> list[str]:
+        return [slug for slug in self._cache if not self._is_hidden(slug)]
+
+    def existing_slugs(self) -> list[str]:
+        d = self._paths.projects
+        if not d.exists():
+            return []
+        # A project that switched modes (leaf <-> branch) may have both
+        # index.md and _index.md on disk. We report the slug present; hugo_path
+        # resolves which file is authoritative. A leftover peer file is silent.
+        out = []
+        for p in d.iterdir():
+            if (p / "_index.md").exists() or (p / "index.md").exists():
+                out.append(p.name)
+        return out
+
+    def hugo_path(self, slug: str) -> Path:
+        name = "_index.md" if self._is_rich(slug) else "index.md"
+        return self._paths.projects / slug / name
+
+    def render_page(self, slug: str) -> str | None:
+        github_data = self._cache.get(slug)
+        if not github_data:
+            return None
+        overrides = self._db.get(slug) or {}
+        merged = merge_project_data(slug, github_data, overrides)
+        return render_project_page(slug, merged)

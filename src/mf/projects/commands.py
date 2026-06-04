@@ -511,6 +511,21 @@ def generate(ctx, slug: str | None, rich_only: bool) -> None:
 
     dry_run = _get_dry_run(ctx)
 
+    if dry_run:
+        from mf.core.config import get_paths
+        from mf.core.drift import print_dry_run_preview
+        from mf.projects.generator import ProjectsRenderer
+
+        # NOTE: --rich-only is not forwarded to the dry-run preview; it shows
+        # drift for all non-hidden projects.
+        _cache = ProjectsCache()
+        _cache.load()
+        _db = ProjectsDatabase()
+        _db.load()
+        renderer = ProjectsRenderer(_cache, _db, get_paths())
+        print_dry_run_preview(renderer, console=console, only_slug=slug)
+        return
+
     db = ProjectsDatabase()
     db.load()
 
@@ -552,6 +567,31 @@ def generate(ctx, slug: str | None, rich_only: bool) -> None:
     else:
         success, failed = generate_all_projects(cache, db, dry_run)
         _print_generation_summary(success, failed)
+
+
+@projects.command(name="diff")
+@click.argument("slug", required=False)
+@click.option("--full", is_flag=True, help="Show a unified diff for each drifted page")
+def diff(slug: str | None, full: bool) -> None:
+    """Show what `mf projects generate` would change (read-only).
+
+    \b
+    Examples:
+        mf projects diff
+        mf projects diff my-project
+        mf projects diff --full
+    """
+    from mf.core.config import get_paths
+    from mf.core.database import ProjectsCache, ProjectsDatabase
+    from mf.core.drift import run_diff_command
+    from mf.projects.generator import ProjectsRenderer
+
+    cache = ProjectsCache()
+    cache.load()
+    db = ProjectsDatabase()
+    db.load()
+    renderer = ProjectsRenderer(cache, db, get_paths())
+    run_diff_command(renderer, console=console, slug=slug, full=full)
 
 
 @projects.command(name="list-rich")
