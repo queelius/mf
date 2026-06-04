@@ -373,25 +373,57 @@ def generate(ctx: Any, name: str | None) -> None:
         mf packages generate
     """
     from mf.packages.database import PackageDatabase
-    from mf.packages.generator import generate_all_packages, generate_package_content
 
     dry_run = _get_dry_run(ctx)
 
     db = PackageDatabase()
     db.load()
 
+    if dry_run:
+        from mf.core.config import get_paths
+        from mf.core.drift import print_dry_run_preview
+        from mf.packages.generator import PackagesRenderer
+
+        renderer = PackagesRenderer(db, get_paths())
+        print_dry_run_preview(renderer, console=console, only_slug=name)
+        return
+
+    from mf.packages.generator import generate_all_packages, generate_package_content
+
     if name:
         entry = db.get(name)
         if not entry:
             console.print(f"[red]Package not found: {name}[/red]")
             return
-
         console.print(f"[cyan]Generating content for {name}...[/cyan]")
-        generate_package_content(name, entry, dry_run=dry_run)
+        generate_package_content(name, entry, dry_run=False)
     else:
         console.print("[cyan]Generating content for all packages...[/cyan]")
-        success, failed = generate_all_packages(db, dry_run=dry_run)
+        success, failed = generate_all_packages(db, dry_run=False)
         console.print(f"\n[green]Generated:[/green] {success} success, {failed} failed")
+
+
+@packages.command(name="diff")
+@click.argument("name", required=False)
+@click.option("--full", is_flag=True, help="Show a unified diff for each drifted page")
+def diff(name: str | None, full: bool) -> None:
+    """Show what `mf packages generate` would change (read-only).
+
+    \\b
+    Examples:
+        mf packages diff
+        mf packages diff requests
+        mf packages diff --full
+    """
+    from mf.core.config import get_paths
+    from mf.core.drift import run_diff_command
+    from mf.packages.database import PackageDatabase
+    from mf.packages.generator import PackagesRenderer
+
+    db = PackageDatabase()
+    db.load()
+    renderer = PackagesRenderer(db, get_paths())
+    run_diff_command(renderer, console=console, slug=name, full=full)
 
 
 # -----------------------------------------------------------------------------

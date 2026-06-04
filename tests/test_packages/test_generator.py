@@ -168,8 +168,8 @@ def test_date_uses_date_added_from_entry(mock_site_root):
     assert "date: 2025-06-15" in text
 
 
-def test_date_falls_back_to_today_when_no_date_added(mock_site_root):
-    """When no date_added in entry, generator falls back to today's date."""
+def test_date_omitted_when_no_date_added(mock_site_root):
+    """When no date_added in entry, the date field is omitted entirely (no wall-clock fallback)."""
     from datetime import date
 
     import json as json_module
@@ -191,7 +191,9 @@ def test_date_falls_back_to_today_when_no_date_added(mock_site_root):
     generate_package_content("no-date-pkg", entry)
 
     text = (mock_site_root / "content" / "packages" / "no-date-pkg" / "index.md").read_text()
-    assert f"date: {date.today().isoformat()}" in text
+    # No date field at all: neither today's date nor any other date must appear.
+    assert "date:" not in text
+    assert date.today().isoformat() not in text
 
 
 def test_yaml_escaping_quotes_in_fields(mock_site_root):
