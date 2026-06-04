@@ -26,14 +26,29 @@ via `frontmatter_ownership` in the series_db entry, or globally via
 
 from __future__ import annotations
 
-import hashlib
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 
-import frontmatter
-
 from mf.core.database import SeriesEntry
+from mf.core.frontmatter import (
+    compute_body_hash,
+    frontmatter_equal,
+    parse_post,
+    parse_text,
+)
+
+__all__ = [
+    "compute_body_hash",
+    "frontmatter_equal",
+    "parse_post",
+    "parse_text",
+    "DEFAULT_BLOG_OWNED",
+    "DEFAULT_SHARED",
+    "get_ownership_sets",
+    "classify_field",
+    "FrontmatterFieldDiff",
+    "compare_frontmatter",
+]
 
 # Default ownership sets. These are conservative starting points; users add to
 # blog_owned as their tooling grows. The shared set covers Hugo conventions
@@ -52,37 +67,6 @@ DEFAULT_SHARED: frozenset[str] = frozenset({
     "categories",
     "summary",
 })
-
-
-def parse_post(path: Path) -> tuple[dict[str, Any], str]:
-    """Parse a post's index.md into (frontmatter_dict, body_text).
-
-    Args:
-        path: Either a post directory (containing index.md) or a path to
-            an index.md file directly.
-
-    Returns:
-        Tuple of frontmatter metadata dict and the body content as a string.
-
-    Raises:
-        FileNotFoundError: if the index.md is missing.
-    """
-    index_file = path / "index.md" if path.is_dir() else path
-    if not index_file.exists():
-        raise FileNotFoundError(f"No index.md at {index_file}")
-    post = frontmatter.load(index_file)
-    return dict(post.metadata), post.content
-
-
-def compute_body_hash(path: Path) -> str:
-    """Hash only the body of a post, ignoring frontmatter.
-
-    Use this instead of `compute_post_hash` when frontmatter formatting
-    drift (tabs vs spaces, key order, tooling-injected fields) should not
-    count as "modified."
-    """
-    _, body = parse_post(path)
-    return hashlib.sha256(body.encode("utf-8")).hexdigest()
 
 
 def get_ownership_sets(entry: SeriesEntry) -> tuple[frozenset[str], frozenset[str]]:
@@ -160,14 +144,3 @@ def compare_frontmatter(
     return diffs
 
 
-def frontmatter_equal(
-    source_fm: dict[str, Any],
-    target_fm: dict[str, Any],
-) -> bool:
-    """Strict semantic equality of parsed frontmatter dicts.
-
-    Order of keys is irrelevant; values must match exactly. Lists are
-    order-sensitive (e.g., `aliases: [a, b]` differs from `[b, a]`); a
-    future per-field equality strategy could relax this for tags.
-    """
-    return source_fm == target_fm
