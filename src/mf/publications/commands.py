@@ -386,10 +386,40 @@ def generate(ctx, slug: str | None, force: bool) -> None:
         mf pubs generate --slug my-paper
         mf pubs generate --force
     """
+    dry_run = ctx.dry_run if ctx else False
+    if dry_run:
+        if force:
+            console.print("[dim]--force has no effect in dry-run mode[/dim]")
+        from mf.core.drift import print_dry_run_preview
+        from mf.publications.generate import PublicationsRenderer
+
+        renderer = PublicationsRenderer(_load_db(), get_paths())
+        print_dry_run_preview(renderer, console=console, only_slug=slug)
+        return
+
     from mf.publications.generate import generate_publications
 
-    dry_run = ctx.dry_run if ctx else False
-    generate_publications(slug=slug, dry_run=dry_run, force=force)
+    generate_publications(slug=slug, dry_run=False, force=force)
+
+
+@pubs.command(name="diff")
+@click.argument("slug", required=False)
+@click.option("--full", is_flag=True, help="Show a unified diff for each drifted page")
+@click.pass_obj
+def diff(ctx, slug: str | None, full: bool) -> None:
+    """Show what `mf pubs generate` would change (read-only).
+
+    \b
+    Examples:
+        mf pubs diff
+        mf pubs diff my-paper
+        mf pubs diff --full
+    """
+    from mf.core.drift import run_diff_command
+    from mf.publications.generate import PublicationsRenderer
+
+    renderer = PublicationsRenderer(_load_db(), get_paths())
+    run_diff_command(renderer, console=console, slug=slug, full=full)
 
 
 @pubs.command()

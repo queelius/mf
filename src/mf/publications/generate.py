@@ -12,7 +12,7 @@ from typing import Any
 import yaml
 from rich.console import Console
 
-from mf.core.config import get_paths
+from mf.core.config import SitePaths, get_paths
 from mf.publications.database import PubsDatabase, PubEntry
 
 console = Console()
@@ -107,3 +107,31 @@ def generate_publications(
         generated += 1
 
     console.print(f"\n[bold]Generated {generated} publication(s)[/bold]")
+
+
+class PublicationsRenderer:
+    """Renderer binding for the render-drift engine."""
+
+    section = "publications"
+
+    def __init__(self, db: PubsDatabase, paths: SitePaths) -> None:
+        self._db = db
+        self._paths = paths
+
+    def iter_slugs(self) -> list[str]:
+        return list(self._db)
+
+    def existing_slugs(self) -> list[str]:
+        d = self._paths.publications
+        if not d.exists():
+            return []
+        return [p.name for p in d.iterdir() if (p / "index.md").exists()]
+
+    def hugo_path(self, slug: str) -> Path:
+        return self._paths.publications / slug / "index.md"
+
+    def render_page(self, slug: str) -> str | None:
+        entry = self._db.get(slug)
+        if entry is None:
+            return None
+        return generate_publication_content(pub_to_frontmatter(entry))
