@@ -12,7 +12,6 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-import yaml
 from rich.console import Console
 from rich.table import Table
 
@@ -20,6 +19,8 @@ from mf.core.config import get_paths
 from mf.core.database import SeriesDatabase, SeriesEntry
 
 console = Console()
+
+SEVERITY_STYLE = {"error": "red", "warn": "yellow", "info": "blue"}
 
 
 @dataclass
@@ -57,11 +58,6 @@ class SeriesAuditReport:
     @property
     def is_clean(self) -> bool:
         return self.errors == 0 and self.warnings == 0
-
-
-def _resolve_path(path_str: str) -> Path:
-    """Expand ~/ in a path string to an absolute Path."""
-    return Path(path_str.replace("~", str(Path.home())))
 
 
 def _read_mkdocs_nav_posts(mkdocs_yml: Path) -> set[str]:
@@ -177,47 +173,37 @@ def audit_sync_state(entry: SeriesEntry, source_dir: Path) -> list[AuditFinding]
     posts_subdir = entry.posts_subdir or "post"
     post_dir = source_dir / posts_subdir
     disk = _read_disk_posts(post_dir) if post_dir.is_dir() else set()
-    paths = get_paths()
-    blog_post_dir = paths.posts
+    blog_post_dir = get_paths().posts
 
-    sync_state = entry.sync_state
-    blog_only: list[str] = []
-    source_only: list[str] = []
+    def warn(message: str, detail: str) -> None:
+        findings.append(AuditFinding(
+            severity="warn",
+            category="sync",
+            series=entry.slug,
+            message=message,
+            detail=detail,
+        ))
 
-    for slug, _ in sync_state.items():
+    for slug in entry.sync_state:
         if slug.startswith("_"):
             continue
         in_source = slug in disk
         in_blog = (blog_post_dir / slug / "index.md").exists()
         if not in_source and not in_blog:
-            findings.append(AuditFinding(
-                severity="warn",
-                category="sync",
-                series=entry.slug,
-                message=f"orphan sync state: {slug}",
-                detail="missing from both source and blog; clean from _sync_state",
-            ))
+            warn(
+                f"orphan sync state: {slug}",
+                "missing from both source and blog; clean from _sync_state",
+            )
         elif not in_source and in_blog:
-            blog_only.append(slug)
+            warn(
+                f"removed from source: {slug}",
+                "still in blog; delete from blog or accept divergence",
+            )
         elif in_source and not in_blog:
-            source_only.append(slug)
-
-    for slug in blog_only:
-        findings.append(AuditFinding(
-            severity="warn",
-            category="sync",
-            series=entry.slug,
-            message=f"removed from source: {slug}",
-            detail="still in blog; delete from blog or accept divergence",
-        ))
-    for slug in source_only:
-        findings.append(AuditFinding(
-            severity="warn",
-            category="sync",
-            series=entry.slug,
-            message=f"never pulled to blog: {slug}",
-            detail="run `mf series sync` to import from source",
-        ))
+            warn(
+                f"never pulled to blog: {slug}",
+                "run `mf series sync` to import from source",
+            )
     return findings
 
 
@@ -228,17 +214,13 @@ def audit_series(entry: SeriesEntry) -> SeriesAuditReport:
         report.add("info", "structure", "no source_dir configured (local-only series)")
         return report
 
-    # entry.source_dir is already a resolved Path
     source_dir = entry.source_dir
-    for f in audit_source(entry, source_dir):
-        report.findings.append(f)
+    report.findings.extend(audit_source(entry, source_dir))
     # Skip nav and sync audits if source itself is missing
     if any(f.severity == "error" and f.category == "source" for f in report.findings):
         return report
-    for f in audit_nav(entry, source_dir):
-        report.findings.append(f)
-    for f in audit_sync_state(entry, source_dir):
-        report.findings.append(f)
+    report.findings.extend(audit_nav(entry, source_dir))
+    report.findings.extend(audit_sync_state(entry, source_dir))
     return report
 
 
@@ -259,42 +241,38 @@ def run_full_audit(slug: str | None = None) -> list[SeriesAuditReport]:
 
 def print_reports(reports: list[SeriesAuditReport], category_filter: str | None = None) -> None:
     """Print audit results as a table."""
-    rows: list[tuple[str, str, str, str, str]] = []
-    for r in reports:
-        for f in r.findings:
-            if category_filter and f.category != category_filter:
-                continue
-            rows.append((f.severity, f.category, f.series, f.message, f.detail))
+    def matches(f: AuditFinding) -> bool:
+        return not category_filter or f.category == category_filter
 
-    if not rows:
+    findings = [f for r in reports for f in r.findings if matches(f)]
+
+    if not findings:
         scope = f" ({category_filter})" if category_filter else ""
         console.print(f"[green]All series clean{scope}.[/green]")
-        # Still report what was scanned
         for r in reports:
-            relevant = [f for f in r.findings if not category_filter or f.category == category_filter]
-            if not relevant:
-                console.print(f"  [dim]{r.series}: ok[/dim]")
+            console.print(f"  [dim]{r.series}: ok[/dim]")
         return
 
-    table = Table(title=f"Series Audit ({len(rows)} finding{'s' if len(rows) != 1 else ''})")
+    plural = "s" if len(findings) != 1 else ""
+    table = Table(title=f"Series Audit ({len(findings)} finding{plural})")
     table.add_column("Severity", style="bold")
     table.add_column("Category", style="cyan")
     table.add_column("Series")
     table.add_column("Finding")
     table.add_column("Detail", style="dim")
 
-    severity_style = {"error": "red", "warn": "yellow", "info": "blue"}
-    for sev, cat, ser, msg, det in rows:
+    for f in findings:
+        style = SEVERITY_STYLE.get(f.severity, "white")
         table.add_row(
-            f"[{severity_style.get(sev, 'white')}]{sev}[/]",
-            cat, ser, msg, det,
+            f"[{style}]{f.severity}[/]",
+            f.category, f.series, f.message, f.detail,
         )
     console.print(table)
 
     # Summary
-    errors = sum(1 for s, *_ in rows if s == "error")
-    warnings = sum(1 for s, *_ in rows if s == "warn")
-    info = sum(1 for s, *_ in rows if s == "info")
+    errors = sum(1 for f in findings if f.severity == "error")
+    warnings = sum(1 for f in findings if f.severity == "warn")
+    info = sum(1 for f in findings if f.severity == "info")
     parts = []
     if errors:
         parts.append(f"[red]{errors} error{'s' if errors != 1 else ''}[/red]")

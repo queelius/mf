@@ -533,7 +533,6 @@ def _get_zenodo_client():
 
     zenodo_config = config.get("zenodo", {})
     api_token = zenodo_config.get("api_token")
-
     if not api_token:
         console.print("[red]Zenodo API token not configured![/red]")
         console.print()
@@ -588,7 +587,6 @@ def register(ctx, slug: str, publish: bool) -> None:
     from mf.publications.zenodo import find_pub_pdf, map_pub_to_zenodo_metadata
 
     dry_run = ctx.dry_run if ctx else False
-    paths = get_paths()
 
     db = _load_db()
     entry = db.get(slug)
@@ -597,41 +595,35 @@ def register(ctx, slug: str, publish: bool) -> None:
         raise SystemExit(1)
 
     # Check if already registered
-    existing_doi = entry.doi
-    if existing_doi and existing_doi != "pending":
-        console.print(f"[yellow]Already has DOI: {existing_doi}[/yellow]")
-        zenodo_url = entry.artifacts.get("zenodo")
-        if zenodo_url:
+    if entry.doi and entry.doi != "pending":
+        console.print(f"[yellow]Already has DOI: {entry.doi}[/yellow]")
+        if zenodo_url := entry.artifacts.get("zenodo"):
             console.print(f"URL: {zenodo_url}")
         console.print("Use 'mf pubs zenodo update' to create a new version.")
         return
 
-    # Find PDF
-    pdf_path = find_pub_pdf(entry, paths.static)
+    pdf_path = find_pub_pdf(entry, get_paths().static)
     if not pdf_path:
         console.print(f"[red]No PDF found for {slug}[/red]")
-        pdf_artifact = entry.artifacts.get("pdf", "(not set)")
-        console.print(f"  artifacts.pdf = {pdf_artifact}")
+        console.print(f"  artifacts.pdf = {entry.artifacts.get('pdf', '(not set)')}")
         console.print("  Set with: mf pubs update {slug} --pdf /path/to/paper.pdf")
         raise SystemExit(1)
 
     console.print(f"[bold]{slug}[/bold]: {entry.title[:60]}...")
     console.print(f"  PDF: {pdf_path}")
 
-    # Build metadata
     metadata = map_pub_to_zenodo_metadata(entry)
     console.print(f"  Type: {metadata['upload_type']}/{metadata.get('publication_type', '')}")
     console.print(f"  Creators: {', '.join(c['name'] for c in metadata['creators'])}")
     console.print(f"  Date: {metadata.get('publication_date', '?')}")
-    if metadata.get("keywords"):
-        console.print(f"  Keywords: {', '.join(metadata['keywords'][:5])}...")
+    if keywords := metadata.get("keywords"):
+        console.print(f"  Keywords: {', '.join(keywords[:5])}...")
 
     if not publish or dry_run:
         console.print()
         console.print("[yellow]DRY RUN. Use --publish to actually mint the DOI.[/yellow]")
         return
 
-    # Get client and publish
     client, sandbox = _get_zenodo_client()
     if sandbox:
         console.print("[yellow]Using Zenodo SANDBOX (testing mode)[/yellow]")
@@ -641,19 +633,15 @@ def register(ctx, slug: str, publish: bool) -> None:
         raise SystemExit(1)
 
     try:
-        # Create deposit
         deposit = client.create_deposit()
         console.print(f"  Created deposit: {deposit.id}")
 
-        # Upload metadata
         deposit = client.update_metadata(deposit.id, metadata)
         console.print("  Uploaded metadata")
 
-        # Upload PDF
         client.upload_file(deposit.id, pdf_path)
         console.print("  Uploaded PDF")
 
-        # Publish
         published = client.publish(deposit.id)
         console.print("  [green]Published![/green]")
 

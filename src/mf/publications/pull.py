@@ -32,19 +32,31 @@ from mf.publications.database import PubEntry, PubsDatabase
 
 console = Console()
 
-# Artifact types that are local files (not URLs)
-LOCAL_ARTIFACT_TYPES = frozenset({"pdf", "html", "slides", "poster", "bibtex"})
-
 
 def _resolve_repos_root() -> Path:
     """Resolve the root directory containing all repos (~/github/)."""
-    paths = get_paths()
     # site_root is ~/github/repos/metafunctor, repos_root is ~/github/
-    return paths.root.parent.parent
+    return get_paths().root.parent.parent
 
 
 def _is_url(value: str) -> bool:
-    return value.startswith("http://") or value.startswith("https://")
+    return value.startswith(("http://", "https://"))
+
+
+def _iter_pubs(slug: str | None, *, warn_missing: bool = True) -> list[tuple[str, PubEntry]]:
+    """Load PubsDatabase and return (slug, entry) pairs to operate on."""
+    db = PubsDatabase()
+    db.load()
+    slugs = [slug] if slug else list(db)
+    pairs: list[tuple[str, PubEntry]] = []
+    for s in slugs:
+        entry = db.get(s)
+        if entry is None:
+            if warn_missing:
+                console.print(f"[red]Not found: {s}[/red]")
+            continue
+        pairs.append((s, entry))
+    return pairs
 
 
 def pull_artifacts(
@@ -59,25 +71,14 @@ def pull_artifacts(
         artifact_type: Pull only this artifact type, e.g. "pdf" (all if None).
         dry_run: Preview only, don't copy files.
     """
-    paths = get_paths()
     repos_root = _resolve_repos_root()
-    static_dir = paths.static
+    static_dir = get_paths().static
 
-    db = PubsDatabase()
-    db.load()
-
-    slugs = [slug] if slug else list(db)
     copied = 0
     skipped = 0
-    missing_source = 0
     errors: list[str] = []
 
-    for s in slugs:
-        entry = db.get(s)
-        if entry is None:
-            console.print(f"[red]Not found: {s}[/red]")
-            continue
-
+    for s, entry in _iter_pubs(slug):
         if not entry.source_repo:
             skipped += 1
             continue
@@ -87,15 +88,13 @@ def pull_artifacts(
             errors.append(f"{s}: source_repo not found: {source_dir}")
             continue
 
-        artifacts_source = _get_artifacts_source(entry)
-        if not artifacts_source:
+        if not entry.artifacts_source:
             skipped += 1
             continue
 
-        for atype, source_rel in artifacts_source.items():
+        for atype, source_rel in entry.artifacts_source.items():
             if artifact_type and atype != artifact_type:
                 continue
-
             target_path_str = entry.artifacts.get(atype)
             if not target_path_str or _is_url(target_path_str):
                 continue
@@ -104,18 +103,15 @@ def pull_artifacts(
             target_path = static_dir / target_path_str.lstrip("/")
 
             if not source_path.is_file():
-                missing_source += 1
                 errors.append(f"{s}/{atype}: source not found: {source_path}")
                 continue
 
             if dry_run:
                 console.print(f"  [dim][dry-run] {s}/{atype}: {source_path} -> {target_path}[/dim]")
-                copied += 1
-                continue
-
-            target_path.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(source_path, target_path)
-            console.print(f"  [green]{s}[/green]/{atype}: copied")
+            else:
+                target_path.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(source_path, target_path)
+                console.print(f"  [green]{s}[/green]/{atype}: copied")
             copied += 1
 
     # Summary
@@ -131,11 +127,6 @@ def pull_artifacts(
             console.print(f"  [red]{err}[/red]")
 
 
-def _get_artifacts_source(entry: PubEntry) -> dict[str, str]:
-    """Get the artifacts_source mapping for an entry."""
-    return entry.artifacts_source
-
-
 def check_artifacts(
     slug: str | None = None,
     artifact_type: str | None = None,
@@ -146,14 +137,8 @@ def check_artifacts(
         slug: Check only this publication (all if None).
         artifact_type: Check only this artifact type (all if None).
     """
-    paths = get_paths()
     repos_root = _resolve_repos_root()
-    static_dir = paths.static
-
-    db = PubsDatabase()
-    db.load()
-
-    slugs = [slug] if slug else list(db)
+    static_dir = get_paths().static
 
     table = Table(title="Artifact Status")
     table.add_column("Publication", style="cyan")
@@ -162,13 +147,11 @@ def check_artifacts(
     table.add_column("In static/")
     table.add_column("Source exists")
 
-    for s in slugs:
-        entry = db.get(s)
-        if entry is None:
-            continue
+    yes = "[green]yes[/green]"
+    no = "[red]no[/red]"
 
+    for s, entry in _iter_pubs(slug, warn_missing=False):
         source_dir = (repos_root / entry.source_repo) if entry.source_repo else None
-        artifacts_source = _get_artifacts_source(entry)
 
         for atype, target_path_str in entry.artifacts.items():
             if artifact_type and atype != artifact_type:
@@ -177,12 +160,11 @@ def check_artifacts(
                 continue
 
             target_path = static_dir / target_path_str.lstrip("/")
-            target_ok = "[green]yes[/green]" if target_path.is_file() else "[red]no[/red]"
+            target_ok = yes if target_path.is_file() else no
 
-            source_rel = artifacts_source.get(atype)
+            source_rel = entry.artifacts_source.get(atype)
             if source_rel and source_dir:
-                source_path = source_dir / source_rel
-                source_ok = "[green]yes[/green]" if source_path.is_file() else "[red]no[/red]"
+                source_ok = yes if (source_dir / source_rel).is_file() else no
             else:
                 source_ok = "[dim]no mapping[/dim]"
 

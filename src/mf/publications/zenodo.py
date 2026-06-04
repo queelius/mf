@@ -27,25 +27,23 @@ TYPE_TO_UPLOAD: dict[str, tuple[str, str | None]] = {
 }
 
 
+def _build_creator(author: Any) -> dict[str, str]:
+    """Convert one author entry (dict or string) to a Zenodo creator dict."""
+    if not isinstance(author, dict):
+        return {"name": str(author)}
+    creator: dict[str, str] = {"name": author.get("name", "Unknown")}
+    for key in ("affiliation", "orcid"):
+        if key in author:
+            creator[key] = author[key]
+    return creator
+
+
 def map_pub_to_zenodo_metadata(entry: PubEntry) -> dict[str, Any]:
     """Map a PubEntry to Zenodo deposit metadata."""
     upload_type, publication_type = TYPE_TO_UPLOAD.get(
         entry.type, ("publication", "other"))
 
-    # Creators
-    creators = []
-    for author in entry.authors:
-        if isinstance(author, dict):
-            creator: dict[str, str] = {"name": author.get("name", "Unknown")}
-            if "affiliation" in author:
-                creator["affiliation"] = author["affiliation"]
-            if "orcid" in author:
-                creator["orcid"] = author["orcid"]
-        else:
-            creator = {"name": str(author)}
-        creators.append(creator)
-    if not creators:
-        creators = [{"name": "Unknown"}]
+    creators = [_build_creator(a) for a in entry.authors] or [{"name": "Unknown"}]
 
     metadata: dict[str, Any] = {
         "title": entry.title,
@@ -53,29 +51,21 @@ def map_pub_to_zenodo_metadata(entry: PubEntry) -> dict[str, Any]:
         "creators": creators,
         "access_right": "open",
         "license": "cc-by-4.0",
+        "description": entry.abstract or f"Publication: {entry.title}",
+        "publication_date": (
+            str(entry.date)[:10] if entry.date
+            else datetime.now().strftime("%Y-%m-%d")
+        ),
     }
 
     if publication_type:
         metadata["publication_type"] = publication_type
-
-    # Description
-    metadata["description"] = entry.abstract or f"Publication: {entry.title}"
-
-    # Date
-    if entry.date:
-        date_str = str(entry.date)
-        metadata["publication_date"] = date_str[:10] if len(date_str) >= 10 else date_str
-    else:
-        metadata["publication_date"] = datetime.now().strftime("%Y-%m-%d")
-
-    # Keywords
     if entry.tags:
         metadata["keywords"] = entry.tags
 
     # Related identifiers
-    related = []
-    code_url = entry.artifacts.get("code")
-    if code_url:
+    related: list[dict[str, str]] = []
+    if code_url := entry.artifacts.get("code"):
         related.append({
             "identifier": code_url,
             "relation": "isSupplementTo",
@@ -114,20 +104,13 @@ def find_pub_pdf(entry: PubEntry, static_dir: Path) -> Path | None:
     if not pdf_path:
         return None
 
+    candidates: list[Path] = []
     if pdf_path.startswith("/"):
-        # Site-relative: strip leading / and resolve under static_dir parent
-        # /latex/foo/paper.pdf -> static/latex/foo/paper.pdf
-        candidate = static_dir.parent / pdf_path.lstrip("/")
-        if candidate.exists():
-            return candidate
-        # Also try under static_dir directly
-        candidate = static_dir / pdf_path.lstrip("/")
-        if candidate.exists():
-            return candidate
+        # Site-relative: try under static_dir.parent (e.g. site_root) and
+        # then under static_dir itself.
+        rel = pdf_path.lstrip("/")
+        candidates.append(static_dir.parent / rel)
+        candidates.append(static_dir / rel)
+    candidates.append(Path(pdf_path))
 
-    # Absolute or relative path
-    p = Path(pdf_path)
-    if p.exists():
-        return p
-
-    return None
+    return next((p for p in candidates if p.exists()), None)
