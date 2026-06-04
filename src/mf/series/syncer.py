@@ -53,6 +53,15 @@ class SyncAction(Enum):
     CONFLICT = "conflict"
 
 
+class InteractiveDecision(Enum):
+    """Outcome of a single per-item interactive prompt."""
+
+    EXECUTE = "execute"     # run this item's action (possibly resolved)
+    SKIP = "skip"           # skip this one item, continue to next
+    QUIT = "quit"           # abort the rest of the plan
+    ACCEPT_ALL = "accept_all"  # execute this item and all remaining without prompting
+
+
 class ConflictResolution(Enum):
     """How to resolve sync conflicts."""
 
@@ -610,12 +619,135 @@ def _update_sync_state_after_copy(
         )
 
 
+def prompt_item_interactively(
+    item: PostSyncItem,
+    direction: str,
+    *,
+    index: int,
+    total: int,
+) -> tuple[InteractiveDecision, SyncAction | None]:
+    """Prompt the user for one plan item's disposition.
+
+    Re-prompts on `[d]iff` until the user picks a terminal choice. Returns:
+        decision: EXECUTE, SKIP, QUIT, or ACCEPT_ALL.
+        resolved_action: For CONFLICT items resolved to theirs/ours, the
+            resulting SyncAction (UPDATE or UNCHANGED). None when the
+            non-interactive path should still apply (e.g. ACCEPT_ALL on a
+            conflict with no per-item theirs/ours choice yet).
+    """
+    import click
+
+    direction_label = "source -> metafunctor" if direction == "pull" else "metafunctor -> source"
+    console.print(
+        f"\n[bold][{index}/{total}][/bold] "
+        f"[yellow]{item.action.value.upper()}[/yellow] "
+        f"[cyan]{item.slug}[/cyan]   "
+        f"[dim]{direction}: {direction_label}[/dim]"
+    )
+    if item.source_path:
+        console.print(f"  source: {item.source_path}")
+    if item.target_path:
+        console.print(f"  target: {item.target_path}")
+    if (
+        item.source_path
+        and item.target_path
+        and item.source_path.exists()
+        and item.target_path.exists()
+    ):
+        diffstat = generate_diffstat(item.source_path, item.target_path)
+        if diffstat:
+            console.print(f"  diffstat: {diffstat}")
+
+    is_conflict = item.action == SyncAction.CONFLICT
+    # Offer [d]iff whenever at least one side has content; generate_diff handles
+    # the empty-side cases (all + or all -) so ADD and REMOVE get previews too.
+    has_diff = bool(item.source_path or item.target_path)
+
+    # One-line hint naming the effect of accept/theirs/ours in this direction.
+    pull = direction == "pull"
+    src_label = "source" if pull else "metafunctor"
+    tgt_label = "metafunctor" if pull else "source"
+    if is_conflict:
+        action_hint = (
+            f"Both sides modified.  [bold]\\[t][/bold]heirs = take {src_label}.  "
+            f"[bold]\\[o][/bold]urs = keep {tgt_label}."
+        )
+    elif item.action == SyncAction.ADD:
+        action_hint = f"Accept: create [cyan]{item.slug}[/cyan] on {tgt_label} from {src_label}."
+    elif item.action == SyncAction.UPDATE:
+        action_hint = f"Accept: overwrite {tgt_label} with {src_label}."
+    elif item.action == SyncAction.REMOVE:
+        action_hint = f"Accept: delete from {tgt_label} ({src_label} no longer has it)."
+    elif item.action == SyncAction.RENAME:
+        action_hint = f"Accept: rename on {tgt_label} to match {src_label}."
+    else:
+        action_hint = ""
+    if action_hint:
+        console.print(f"  [dim]{action_hint}[/dim]")
+
+    if is_conflict:
+        choices_label = r"\[t]heirs / \[o]urs / \[s]kip"
+        default_choice = "s"
+    else:
+        choices_label = r"\[a]ccept / \[s]kip"
+        default_choice = "a"
+    if has_diff:
+        choices_label += r" / \[d]iff"
+    choices_label += r" / \[A]ll / \[q]uit"
+
+    while True:
+        console.print(f"  {choices_label}")
+        raw = click.prompt(
+            "  >",
+            default=default_choice,
+            show_default=True,
+            type=str,
+            prompt_suffix=" ",
+        )
+        # Tolerate users copying the prompt format like "[a]" instead of "a";
+        # strip outer brackets if the whole token is bracketed.
+        stripped = raw.strip()
+        if len(stripped) > 2 and stripped.startswith("[") and stripped.endswith("]"):
+            stripped = stripped[1:-1]
+        # Capital A is case-sensitive: distinguish "A" (accept all) from "a" (accept).
+        if stripped == "A":
+            return (InteractiveDecision.ACCEPT_ALL, None)
+
+        choice = stripped.lower()
+
+        if choice in ("q", "quit"):
+            return (InteractiveDecision.QUIT, None)
+        if choice in ("s", "skip"):
+            return (InteractiveDecision.SKIP, None)
+        if choice in ("all", "accept-all"):
+            return (InteractiveDecision.ACCEPT_ALL, None)
+        if choice in ("a", "accept") and not is_conflict:
+            return (InteractiveDecision.EXECUTE, None)
+        if choice in ("d", "diff") and has_diff:
+            print_conflict_diff(item)
+            continue
+        if choice in ("t", "theirs") and is_conflict:
+            resolved = resolve_conflict(item, ConflictResolution.THEIRS, direction)
+            if resolved == SyncAction.UNCHANGED:
+                return (InteractiveDecision.SKIP, None)
+            return (InteractiveDecision.EXECUTE, resolved)
+        if choice in ("o", "ours") and is_conflict:
+            resolved = resolve_conflict(item, ConflictResolution.OURS, direction)
+            if resolved == SyncAction.UNCHANGED:
+                return (InteractiveDecision.SKIP, None)
+            return (InteractiveDecision.EXECUTE, resolved)
+
+        console.print(f"  [yellow]Unknown choice: {raw!r}[/yellow]")
+
+
 def execute_sync(
     plan: SyncPlan,
     db: SeriesDatabase,
     delete: bool = False,
     dry_run: bool = False,
     conflict_resolution: ConflictResolution = ConflictResolution.SKIP,
+    interactive: bool = False,
+    interactive_conflicts_only: bool = False,
 ) -> tuple[int, int, int]:
     """Execute a sync plan.
 
@@ -624,7 +756,13 @@ def execute_sync(
         db: Series database (for updating sync state)
         delete: Whether to delete removed posts
         dry_run: Preview only, don't make changes
-        conflict_resolution: How to resolve conflicts (default: skip)
+        conflict_resolution: How to resolve conflicts when not handled by
+            the per-item prompt. Used as the fallback after `[A]ccept all`
+            or when `interactive` is False.
+        interactive: Prompt per item before acting. When False, all items
+            run through with the global conflict_resolution.
+        interactive_conflicts_only: When `interactive` is True, only prompt
+            for conflict items; ADD/UPDATE/REMOVE/RENAME run silently.
 
     Returns:
         Tuple of (success_count, failure_count, skipped_conflicts)
@@ -637,14 +775,44 @@ def execute_sync(
     success = 0
     failures = 0
     skipped_conflicts = 0
+    accept_all = False
 
-    for item in plan.posts:
-        if item.action == SyncAction.UNCHANGED:
-            continue
+    actionable = [p for p in plan.posts if p.action != SyncAction.UNCHANGED]
+    total = len(actionable)
 
+    for index, item in enumerate(actionable, start=1):
         try:
-            # Resolve conflicts first
-            if item.action == SyncAction.CONFLICT:
+            prompt_resolved_conflict = False
+
+            if interactive and not accept_all:
+                should_prompt = (
+                    not interactive_conflicts_only
+                    or item.action == SyncAction.CONFLICT
+                )
+                if should_prompt:
+                    decision, resolved = prompt_item_interactively(
+                        item, plan.direction, index=index, total=total
+                    )
+                    if decision == InteractiveDecision.QUIT:
+                        console.print("[yellow]Sync aborted by user[/yellow]")
+                        break
+                    if decision == InteractiveDecision.SKIP:
+                        if item.action == SyncAction.CONFLICT:
+                            skipped_conflicts += 1
+                            console.print(f"  [magenta]conflict skipped:[/magenta] {item.slug}")
+                        else:
+                            console.print(f"  [dim]skipped:[/dim] {item.slug}")
+                        continue
+                    if decision == InteractiveDecision.ACCEPT_ALL:
+                        accept_all = True
+                    if resolved is not None:
+                        item.action = resolved
+                        prompt_resolved_conflict = True
+
+            # Resolve conflicts via global policy when the prompt didn't
+            # already settle them (non-interactive, accept_all, or
+            # interactive_conflicts_only=False with a non-conflict).
+            if item.action == SyncAction.CONFLICT and not prompt_resolved_conflict:
                 resolved_action = resolve_conflict(item, conflict_resolution, plan.direction)
                 if resolved_action == SyncAction.UNCHANGED:
                     console.print(f"  [magenta]conflict skipped:[/magenta] {item.slug}")

@@ -236,7 +236,7 @@ def audit_cmd(slug: str | None, category: str | None) -> None:
         mf series audit stepanov           # audit one series
         mf series audit --category nav     # only nav drift
     """
-    from mf.series.audit import run_full_audit, print_reports
+    from mf.series.audit import print_reports, run_full_audit
 
     reports = run_full_audit(slug=slug)
     print_reports(reports, category_filter=category)
@@ -259,10 +259,97 @@ def audit_nav_cmd(slug: str | None) -> None:
         mf series audit-nav            # audit all series
         mf series audit-nav stepanov   # audit one series
     """
-    from mf.series.audit import run_full_audit, print_reports
+    from mf.series.audit import print_reports, run_full_audit
 
     reports = run_full_audit(slug=slug)
     print_reports(reports, category_filter="nav")
+
+
+@series.command(name="diff")
+@click.argument("slug", required=False)
+@click.option("--post", help="Show unified diff for one post (requires SLUG)")
+@click.option("--full", is_flag=True, help="Append unified diff for every modified post")
+@click.option(
+    "--frontmatter",
+    "frontmatter",
+    is_flag=True,
+    help="Also compare frontmatter semantically with ownership-tier annotations",
+)
+def diff_cmd(
+    slug: str | None,
+    post: str | None,
+    full: bool,
+    frontmatter: bool,
+) -> None:
+    """Show drift between source and metafunctor posts (read-only).
+
+    Without SLUG, prints a rollup across all syncable series. With SLUG,
+    prints a per-post diffstat for that series. Combine with --full to
+    append a unified body diff for every modified post, --post to inspect
+    one post in detail, or --frontmatter to also see semantic frontmatter
+    differences classified by ownership tier.
+
+    \b
+    Default body-only comparison: tooling-injected frontmatter fields
+    (e.g. tts: true) and formatting drift (tabs, key order) do not count
+    as modified. Use --frontmatter to surface that drift, classified into
+    source-owned, blog-owned, and shared tiers.
+
+    \b
+    Diff convention: '-' lines are source, '+' lines are metafunctor.
+
+    \b
+    Examples:
+        mf series diff                              # rollup across series
+        mf series diff stepanov                     # diffstat per post
+        mf series diff stepanov --full              # plus body unified diffs
+        mf series diff stepanov --frontmatter       # plus frontmatter tables
+        mf series diff stepanov --post intro        # body diff for one post
+        mf series diff stepanov --post intro --frontmatter
+    """
+    from mf.series.differ import diff_all, diff_series
+
+    if slug is None:
+        if post or full:
+            console.print(
+                "[yellow]--post and --full require a series slug[/yellow]"
+            )
+            raise SystemExit(1)
+        diff_all(frontmatter=frontmatter)
+    else:
+        diff_series(slug, post=post, full=full, frontmatter=frontmatter)
+
+
+@series.command(name="classify-frontmatter")
+@click.argument("slug", required=False)
+@click.option(
+    "--global",
+    "show_global",
+    is_flag=True,
+    help="Append a cross-series rollup highlighting global-default candidates",
+)
+def classify_frontmatter_cmd(slug: str | None, show_global: bool) -> None:
+    """Propose frontmatter ownership classification by scanning the corpus.
+
+    Walks posts in a series (or all syncable series) and classifies each
+    frontmatter field by observed pattern: blog-only fields are likely
+    tooling-injected, source-only fields are canonical metadata, divergent
+    shared fields are points where both sides edit.
+
+    Read-only: prints a proposed `frontmatter_ownership` patch for each
+    series. Copy the snippet into series_db.json to register the
+    classification, or use `--global` to see which fields recur across
+    series and merit promotion to the global default sets.
+
+    \b
+    Examples:
+        mf series classify-frontmatter                 # all syncable series
+        mf series classify-frontmatter stepanov        # one series
+        mf series classify-frontmatter --global        # cross-series patterns
+    """
+    from mf.series.classify import classify_frontmatter
+
+    classify_frontmatter(slug=slug, show_global=show_global)
 
 
 @series.command()
@@ -710,7 +797,18 @@ def _get_posts_in_series(slug: str) -> list[dict]:
 @click.option("--summary", is_flag=True, help="Show compact diffstat (+N -M lines) for changes")
 @click.option("--ours", "resolve_ours", is_flag=True, help="Resolve conflicts by keeping metafunctor version")
 @click.option("--theirs", "resolve_theirs", is_flag=True, help="Resolve conflicts by taking source version")
-@click.option("--interactive", "interactive", is_flag=True, help="Prompt for each conflict")
+@click.option(
+    "--interactive",
+    "interactive",
+    is_flag=True,
+    help="Prompt per item before acting (every action), with [A]ccept all and [q]uit shortcuts",
+)
+@click.option(
+    "--interactive-conflicts-only",
+    "interactive_conflicts_only",
+    is_flag=True,
+    help="With --interactive, prompt only for conflicts; let other actions run silently",
+)
 @click.option("--add-mkdocs", is_flag=True, help="Update MkDocs site in source repo (push only)")
 def sync(
     slug: str | None,
@@ -726,6 +824,7 @@ def sync(
     resolve_ours: bool,
     resolve_theirs: bool,
     interactive: bool,
+    interactive_conflicts_only: bool,
     add_mkdocs: bool,
 ) -> None:
     """Sync series posts from external source repository.
@@ -741,16 +840,26 @@ def sync(
         --ours     Keep metafunctor version (overwrite source on push)
         --theirs   Take source version (overwrite metafunctor on pull)
         --diff     Show unified diff for conflicted posts
-        --interactive  Prompt for each conflict
+
+    \b
+    Interactive mode:
+        --interactive prompts before every actionable item with per-item
+        choices: [a]ccept, [s]kip, [d]iff, [t]heirs, [o]urs, [A]ccept all,
+        [q]uit. Combine with --ours or --theirs to set the conflict default
+        used after [A]ccept all. Use --interactive-conflicts-only to limit
+        prompts to conflict items only.
 
     \b
     Examples:
-        mf series sync stepanov           # Pull stepanov posts
-        mf series sync stepanov --dry-run # Preview changes
-        mf series sync stepanov --dry-run --diff  # Preview with diffs
-        mf series sync stepanov --push    # Push to source repo
-        mf series sync stepanov --theirs  # Pull, taking source for conflicts
-        mf series sync --all              # Sync all configured series
+        mf series sync stepanov                        # Pull stepanov posts
+        mf series sync stepanov --dry-run              # Preview changes
+        mf series sync stepanov --dry-run --diff       # Preview with diffs
+        mf series sync stepanov --push                 # Push to source repo
+        mf series sync stepanov --theirs               # Pull, take source for conflicts
+        mf series sync stepanov --interactive          # Prompt per post
+        mf series sync stepanov --interactive --theirs # Per-post prompts; [A] = take theirs
+        mf series sync stepanov --interactive-conflicts-only --interactive  # Conflicts only
+        mf series sync --all                           # Sync all configured series
     """
     from mf.core.database import SeriesDatabase
     from mf.series.syncer import (
@@ -767,10 +876,18 @@ def sync(
         console.print("[red]--add-mkdocs can only be used with --push[/red]")
         return
 
-    # Validate conflict resolution flags
-    if sum([resolve_ours, resolve_theirs, interactive]) > 1:
-        console.print("[red]Cannot use multiple conflict resolution flags together[/red]")
+    # --ours and --theirs are mutually exclusive (they say opposite things);
+    # --interactive composes with either.
+    if resolve_ours and resolve_theirs:
+        console.print("[red]Cannot combine --ours and --theirs[/red]")
         return
+
+    # --interactive-conflicts-only is meaningful only with --interactive.
+    if interactive_conflicts_only and not interactive:
+        console.print(
+            "[yellow]--interactive-conflicts-only has no effect without "
+            "--interactive[/yellow]"
+        )
 
     # Determine conflict resolution strategy
     if resolve_ours:
@@ -836,18 +953,14 @@ def sync(
         if not plan.has_changes:
             console.print("[green]Already up to date[/green]")
         else:
-            # Handle interactive mode for conflicts
-            effective_resolution = conflict_resolution
-            if interactive and plan.conflict_count > 0:
-                effective_resolution = _prompt_conflict_resolution(plan, push)
-
-            # Execute sync
             console.print("\n[cyan]Executing sync...[/cyan]")
             success, failures, skipped = execute_sync(
                 plan, db,
                 delete=delete,
                 dry_run=dry_run,
-                conflict_resolution=effective_resolution,
+                conflict_resolution=conflict_resolution,
+                interactive=interactive,
+                interactive_conflicts_only=interactive_conflicts_only,
             )
             total_success += success
             total_failures += failures
@@ -881,43 +994,6 @@ def sync(
         if total_conflicts > 0:
             console.print(f"[magenta]Conflicts skipped:[/magenta] {total_conflicts}")
             console.print("[dim]Use --ours, --theirs, or --interactive to resolve conflicts[/dim]")
-
-
-def _prompt_conflict_resolution(plan: Any, push: bool) -> Any:
-    """Prompt user for conflict resolution in interactive mode.
-
-    Args:
-        plan: The sync plan with conflicts
-        push: Whether this is a push operation
-
-    Returns:
-        ConflictResolution to use
-    """
-    from mf.series.syncer import ConflictResolution, print_conflict_diff
-
-    console.print(f"\n[magenta bold]Found {plan.conflict_count} conflict(s)[/magenta bold]")
-
-    for item in plan.conflicts:
-        print_conflict_diff(item)
-
-    console.print("\n[cyan]How do you want to resolve these conflicts?[/cyan]")
-    if push:
-        console.print("  [1] Skip conflicts (keep both versions unchanged)")
-        console.print("  [2] Use metafunctor version (--ours)")
-        console.print("  [3] Cancel")
-    else:
-        console.print("  [1] Skip conflicts (keep both versions unchanged)")
-        console.print("  [2] Use source version (--theirs)")
-        console.print("  [3] Cancel")
-
-    choice: int = click.prompt("Choice", type=click.IntRange(1, 3), default=1)  # type: ignore[arg-type]
-
-    if choice == 1:
-        return ConflictResolution.SKIP
-    elif choice == 2:
-        return ConflictResolution.OURS if push else ConflictResolution.THEIRS
-    else:
-        raise click.Abort()
 
 
 @series.command()
