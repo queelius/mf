@@ -168,8 +168,8 @@ def print_dry_run_preview(
     if only_slug is not None:
         findings = [f for f in findings if f.slug == only_slug]
         if not findings:
-            console.print(f"[red]Unknown slug for {renderer.section}: {only_slug}[/red]")
-            raise SystemExit(1)
+            console.print(f"[yellow]No matching slug in {renderer.section}: {only_slug}[/yellow]")
+            return
     for f in sorted(findings, key=lambda x: x.slug):
         verb = _DRY_RUN_VERB.get(f.status, f.status)
         console.print(f"  would {verb}: {renderer.hugo_path(f.slug)}")

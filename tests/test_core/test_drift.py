@@ -176,3 +176,15 @@ def test_run_diff_command_full_emits_diff_for_stale(tmp_path):
     out = buf.getvalue()
     assert "stale" in out
     assert "new" in out
+
+
+def test_dry_run_preview_unknown_only_slug_returns_cleanly(tmp_path, capsys):
+    from rich.console import Console
+
+    from mf.core.drift import print_dry_run_preview
+
+    renderer = FakeRenderer(tmp_path, {"a": '---\ntitle: "x"\n---\n\nbody\n'})
+    # Must NOT raise SystemExit for an unknown slug; prints a note and returns.
+    print_dry_run_preview(renderer, console=Console(), only_slug="nonexistent")
+    out = capsys.readouterr().out
+    assert "No matching slug" in out
