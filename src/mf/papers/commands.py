@@ -73,15 +73,10 @@ def generate(ctx, slug: str | None, no_image_cache: bool) -> None:
     """
     dry_run = ctx.dry_run if ctx else False
     if dry_run:
-        from mf.core.config import get_paths
-        from mf.core.database import PaperDatabase
         from mf.core.drift import print_dry_run_preview
-        from mf.papers.generator import PapersRenderer
+        from mf.papers.generator import make_renderer
 
-        db = PaperDatabase()
-        db.load()
-        renderer = PapersRenderer(db, get_paths())
-        print_dry_run_preview(renderer, console=console, only_slug=slug)
+        print_dry_run_preview(make_renderer(), console=console, only_slug=slug)
         return
 
     from mf.papers.generator import generate_papers
@@ -101,15 +96,10 @@ def diff(slug: str | None, full: bool) -> None:
         mf papers diff my-paper
         mf papers diff --full
     """
-    from mf.core.config import get_paths
-    from mf.core.database import PaperDatabase
     from mf.core.drift import run_diff_command
-    from mf.papers.generator import PapersRenderer
+    from mf.papers.generator import make_renderer
 
-    db = PaperDatabase()
-    db.load()
-    renderer = PapersRenderer(db, get_paths())
-    run_diff_command(renderer, console=console, slug=slug, full=full)
+    run_diff_command(make_renderer(), console=console, slug=slug, full=full)
 
 
 @papers.command(name="list")

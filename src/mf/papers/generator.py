@@ -341,3 +341,13 @@ class PapersRenderer:
 
     def render_page(self, slug: str) -> str | None:
         return render_paper_page(slug, self._db)
+
+
+def make_renderer() -> PapersRenderer:
+    """Build a PapersRenderer with a freshly loaded db."""
+    from mf.core.config import get_paths
+    from mf.core.database import PaperDatabase
+
+    db = PaperDatabase()
+    db.load()
+    return PapersRenderer(db, get_paths())

@@ -113,6 +113,7 @@ from mf.backup.commands import backup  # noqa: E402
 from mf.config.commands import config  # noqa: E402
 from mf.content.commands import content  # noqa: E402
 from mf.core.integrity_commands import integrity  # noqa: E402
+from mf.core.status_commands import status  # noqa: E402
 from mf.health.commands import health  # noqa: E402
 from mf.packages.commands import packages  # noqa: E402
 from mf.papers.commands import papers  # noqa: E402
@@ -132,6 +133,7 @@ main.add_command(content)
 main.add_command(series)
 main.add_command(analytics)
 main.add_command(integrity)
+main.add_command(status)
 main.add_command(taxonomy)
 main.add_command(health)
 main.add_command(packages)

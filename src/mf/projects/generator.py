@@ -487,3 +487,15 @@ class ProjectsRenderer:
         overrides = self._db.get(slug) or {}
         merged = merge_project_data(slug, github_data, overrides)
         return render_project_page(slug, merged)
+
+
+def make_renderer() -> ProjectsRenderer:
+    """Build a ProjectsRenderer with freshly loaded cache and db."""
+    from mf.core.config import get_paths
+    from mf.core.database import ProjectsCache, ProjectsDatabase
+
+    cache = ProjectsCache()
+    cache.load()
+    db = ProjectsDatabase()
+    db.load()
+    return ProjectsRenderer(cache, db, get_paths())

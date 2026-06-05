@@ -134,3 +134,13 @@ class PublicationsRenderer:
         if entry is None:
             return None
         return generate_publication_content(pub_to_frontmatter(entry))
+
+
+def make_renderer() -> PublicationsRenderer:
+    """Build a PublicationsRenderer with a freshly loaded db."""
+    from mf.core.config import get_paths
+    from mf.publications.database import PubsDatabase
+
+    db = PubsDatabase()
+    db.load()
+    return PublicationsRenderer(db, get_paths())

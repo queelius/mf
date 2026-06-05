@@ -149,3 +149,13 @@ class PackagesRenderer:
         if entry is None:
             return None
         return render_package_page(slug, entry)
+
+
+def make_renderer() -> PackagesRenderer:
+    """Build a PackagesRenderer with a freshly loaded db."""
+    from mf.core.config import get_paths
+    from mf.packages.database import PackageDatabase
+
+    db = PackageDatabase()
+    db.load()
+    return PackagesRenderer(db, get_paths())

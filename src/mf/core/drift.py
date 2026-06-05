@@ -60,6 +60,7 @@ STATUS_STYLE = {
     "missing": "green",
     "orphan": "red",
     "current": "dim",
+    "error": "red",
 }
 
 _DRY_RUN_VERB = {

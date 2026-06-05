@@ -372,23 +372,20 @@ def generate(ctx: Any, name: str | None) -> None:
         mf packages generate requests
         mf packages generate
     """
-    from mf.packages.database import PackageDatabase
-
     dry_run = _get_dry_run(ctx)
+
+    if dry_run:
+        from mf.core.drift import print_dry_run_preview
+        from mf.packages.generator import make_renderer
+
+        print_dry_run_preview(make_renderer(), console=console, only_slug=name)
+        return
+
+    from mf.packages.database import PackageDatabase
+    from mf.packages.generator import generate_all_packages, generate_package_content
 
     db = PackageDatabase()
     db.load()
-
-    if dry_run:
-        from mf.core.config import get_paths
-        from mf.core.drift import print_dry_run_preview
-        from mf.packages.generator import PackagesRenderer
-
-        renderer = PackagesRenderer(db, get_paths())
-        print_dry_run_preview(renderer, console=console, only_slug=name)
-        return
-
-    from mf.packages.generator import generate_all_packages, generate_package_content
 
     if name:
         entry = db.get(name)
@@ -415,15 +412,10 @@ def diff(name: str | None, full: bool) -> None:
         mf packages diff requests
         mf packages diff --full
     """
-    from mf.core.config import get_paths
     from mf.core.drift import run_diff_command
-    from mf.packages.database import PackageDatabase
-    from mf.packages.generator import PackagesRenderer
+    from mf.packages.generator import make_renderer
 
-    db = PackageDatabase()
-    db.load()
-    renderer = PackagesRenderer(db, get_paths())
-    run_diff_command(renderer, console=console, slug=name, full=full)
+    run_diff_command(make_renderer(), console=console, slug=name, full=full)
 
 
 # -----------------------------------------------------------------------------
