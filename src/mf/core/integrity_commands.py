@@ -7,6 +7,8 @@ from rich.console import Console
 from rich.prompt import Confirm
 from rich.table import Table
 
+from mf.core.findings import SEVERITY_STYLE
+
 console = Console()
 
 
@@ -107,7 +109,9 @@ def integrity_check(
         console.print()
         console.print(f"[yellow]Other Issues ({len(other_issues)}):[/yellow]")
         for issue in other_issues:
-            sev_color = "yellow" if issue.severity.value == "warning" else "blue"
+            # Integrity uses "warning"; normalize to "warn" for SEVERITY_STYLE lookup.
+            _sev_key = "warn" if issue.severity.value == "warning" else issue.severity.value
+            sev_color = SEVERITY_STYLE.get(_sev_key, "white")
             fixable_marker = " [green](fixable)[/green]" if issue.fixable else ""
             console.print(
                 f"  [{sev_color}]• [{issue.database}] {issue.entry_id}[/{sev_color}]{fixable_marker}"

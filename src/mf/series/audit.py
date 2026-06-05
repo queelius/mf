@@ -17,10 +17,9 @@ from rich.table import Table
 
 from mf.core.config import get_paths
 from mf.core.database import SeriesDatabase, SeriesEntry
+from mf.core.findings import SEVERITY_STYLE, severity_summary
 
 console = Console()
-
-SEVERITY_STYLE = {"error": "red", "warn": "yellow", "info": "blue"}
 
 
 @dataclass
@@ -270,15 +269,6 @@ def print_reports(reports: list[SeriesAuditReport], category_filter: str | None 
     console.print(table)
 
     # Summary
-    errors = sum(1 for f in findings if f.severity == "error")
-    warnings = sum(1 for f in findings if f.severity == "warn")
-    info = sum(1 for f in findings if f.severity == "info")
-    parts = []
-    if errors:
-        parts.append(f"[red]{errors} error{'s' if errors != 1 else ''}[/red]")
-    if warnings:
-        parts.append(f"[yellow]{warnings} warning{'s' if warnings != 1 else ''}[/yellow]")
-    if info:
-        parts.append(f"[blue]{info} info[/blue]")
-    if parts:
-        console.print(" · ".join(parts))
+    summary = severity_summary(findings)
+    if summary:
+        console.print(summary)
