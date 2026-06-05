@@ -6,6 +6,7 @@ Creates content/publications/{slug}/index.md with artifacts frontmatter.
 
 from __future__ import annotations
 
+import contextlib
 from pathlib import Path
 from typing import Any
 
@@ -13,7 +14,7 @@ import yaml
 from rich.console import Console
 
 from mf.core.config import SitePaths, get_paths
-from mf.publications.database import PubsDatabase, PubEntry
+from mf.publications.database import PubEntry, PubsDatabase
 
 console = Console()
 
@@ -42,10 +43,8 @@ def pub_to_frontmatter(entry: PubEntry) -> dict[str, Any]:
     if entry.arxiv_id:
         pub_meta["arxiv"] = entry.arxiv_id
     if entry.date:
-        try:
+        with contextlib.suppress(ValueError, IndexError):
             pub_meta["year"] = int(entry.date[:4])
-        except (ValueError, IndexError):
-            pass
     fm["publication"] = pub_meta
 
     if entry.tags:

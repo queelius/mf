@@ -62,7 +62,7 @@ def _parse_since(since: str) -> datetime:
     except ValueError:
         raise click.BadParameter(
             f"Invalid date: {since}. Use YYYY-MM-DD or relative (30d, 4w, 3m)."
-        )
+        ) from None
 
 
 def _coerce_value(value: str):

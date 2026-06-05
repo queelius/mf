@@ -92,8 +92,7 @@ def generate(ctx, slug: str | None, no_image_cache: bool) -> None:
 @papers.command(name="diff")
 @click.argument("slug", required=False)
 @click.option("--full", is_flag=True, help="Show a unified diff for each drifted page")
-@click.pass_obj
-def diff(ctx, slug: str | None, full: bool) -> None:
+def diff(slug: str | None, full: bool) -> None:
     """Show what `mf papers generate` would change (read-only).
 
     \b

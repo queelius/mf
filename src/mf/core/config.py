@@ -71,10 +71,7 @@ def get_global_config_path() -> Path:
         Path to global config file (may not exist).
     """
     xdg_config_home = os.environ.get("XDG_CONFIG_HOME")
-    if xdg_config_home:
-        base = Path(xdg_config_home)
-    else:
-        base = Path.home() / ".config"
+    base = Path(xdg_config_home) if xdg_config_home else Path.home() / ".config"
     return base / "mf" / "config.yaml"
 
 

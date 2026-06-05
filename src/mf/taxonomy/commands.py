@@ -228,9 +228,8 @@ def normalize_cmd(
             console.print(f"  [dim]Would update:[/dim] {slug}")
         return
 
-    if not yes:
-        if not click.confirm("Proceed?", default=True):
-            return
+    if not yes and not click.confirm("Proceed?", default=True):
+        return
 
     scanner = ContentScanner()
     updated = 0

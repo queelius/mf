@@ -5,6 +5,7 @@ Fetches R package metadata from the crandb API (https://crandb.r-pkg.org).
 
 from __future__ import annotations
 
+import contextlib
 import logging
 from datetime import datetime
 
@@ -68,11 +69,8 @@ class CRANAdapter:
                     date_pub.replace(" UTC", "+00:00")
                 )
             except (ValueError, TypeError):
-                try:
-                    # Try just the date portion
+                with contextlib.suppress(ValueError, TypeError, IndexError):
                     last_updated = datetime.fromisoformat(date_pub[:10])
-                except (ValueError, TypeError, IndexError):
-                    pass
 
         # Extract versions list from crandb "versions" field if present
         versions_data = data.get("versions")

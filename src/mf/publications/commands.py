@@ -405,8 +405,7 @@ def generate(ctx, slug: str | None, force: bool) -> None:
 @pubs.command(name="diff")
 @click.argument("slug", required=False)
 @click.option("--full", is_flag=True, help="Show a unified diff for each drifted page")
-@click.pass_obj
-def diff(ctx, slug: str | None, full: bool) -> None:
+def diff(slug: str | None, full: bool) -> None:
     """Show what `mf pubs generate` would change (read-only).
 
     \b
@@ -443,7 +442,7 @@ def migrate(ctx) -> None:
         from mf.publications.migrate import migrate_paper_db
     except ImportError:
         console.print("[red]migrate module not available (mf.publications.migrate not found)[/red]")
-        raise SystemExit(1)
+        raise SystemExit(1) from None
 
     paths = get_paths()
     migrate_paper_db(paper_db_path=paths.paper_db, pubs_db_path=paths.pubs_db)
@@ -700,4 +699,4 @@ def register(ctx, slug: str, publish: bool) -> None:
 
     except Exception as e:
         console.print(f"  [red]Error: {e}[/red]")
-        raise SystemExit(1)
+        raise SystemExit(1) from e
