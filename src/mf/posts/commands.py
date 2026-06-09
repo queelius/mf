@@ -214,6 +214,7 @@ def list_posts(
                     "slug": it.slug,
                     "title": it.title,
                     "date": it.date,
+                    "description": it.front_matter.get("description", ""),
                     "tags": it.tags,
                     "categories": it.categories,
                     "series": it.front_matter.get("series", []),
