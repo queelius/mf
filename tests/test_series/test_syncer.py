@@ -1556,6 +1556,36 @@ class TestRenderCommand:
                 with pytest.raises(RuntimeError, match="render_command failed"):
                     run_render_command(entry)
 
+    def test_dry_run_skips_command(self, tmp_path):
+        """run_render_command with dry_run=True does not execute the build."""
+        source_dir = tmp_path / "source_repo"
+        source_dir.mkdir()
+        entry = SeriesEntry(
+            slug="test",
+            data={"source_dir": str(source_dir), "render_command": "make render"},
+        )
+        with patch("mf.series.syncer.subprocess.run") as mock_run:
+            with patch("mf.series.syncer.console"):
+                run_render_command(entry, dry_run=True)
+        mock_run.assert_not_called()
+
+    def test_timeout_raises_runtime_error(self, tmp_path):
+        """A hung build that hits the timeout is reported as a RuntimeError so the
+        per-series handler can continue the batch."""
+        source_dir = tmp_path / "source_repo"
+        source_dir.mkdir()
+        entry = SeriesEntry(
+            slug="my-series",
+            data={"source_dir": str(source_dir), "render_command": "sleep 999"},
+        )
+        with patch(
+            "mf.series.syncer.subprocess.run",
+            side_effect=subprocess.TimeoutExpired(cmd="sleep 999", timeout=600),
+        ):
+            with patch("mf.series.syncer.console"):
+                with pytest.raises(RuntimeError, match="timed out"):
+                    run_render_command(entry)
+
     # -- Integration: render_command runs before get_source_posts --
 
     def test_plan_pull_sync_runs_render_before_reading_posts(self, series_with_source):

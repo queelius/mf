@@ -382,7 +382,7 @@ def _validate_source_dir(entry: SeriesEntry, plan: SyncPlan) -> Path | None:
     return source_dir
 
 
-def run_render_command(entry: SeriesEntry) -> None:
+def run_render_command(entry: SeriesEntry, dry_run: bool = False) -> None:
     """Run a series render_command in its source_dir to materialize source posts.
 
     For notebook-backed or otherwise generated series, the posts under posts_subdir
@@ -392,15 +392,33 @@ def run_render_command(entry: SeriesEntry) -> None:
     RuntimeError on a non-zero exit so a failed build aborts the sync rather than
     syncing stale or partial output. A no-op when render_command or source_dir is
     unset.
+
+    On dry_run the build is skipped entirely (it mutates source_dir, which a
+    preview must not do). The dry-run plan is then computed against the current,
+    possibly stale, source. The subprocess gets a 600s timeout and a closed stdin
+    so a hung or input-waiting build cannot block the whole batch; a timeout is
+    re-raised as RuntimeError so the existing per-series handler reports it and the
+    batch continues.
     """
     command = entry.render_command
     if not command or entry.source_dir is None:
         return
+    if dry_run:
+        console.print(
+            f"[dim]would run render_command: {command} (skipped in dry-run)[/dim]"
+        )
+        return
     console.print(f"[dim]running render_command: {command}[/dim]")
-    result = subprocess.run(
-        command, shell=True, cwd=entry.source_dir,
-        capture_output=True, text=True,
-    )
+    try:
+        result = subprocess.run(
+            command, shell=True, cwd=entry.source_dir,
+            capture_output=True, text=True,
+            timeout=600, stdin=subprocess.DEVNULL,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(
+            f"render_command timed out after 600s for series '{entry.slug}'"
+        ) from exc
     if result.returncode != 0:
         raise RuntimeError(
             f"render_command failed (exit {result.returncode}) for series "
@@ -412,6 +430,7 @@ def plan_pull_sync(
     entry: SeriesEntry,
     include_landing: bool = True,
     include_posts: bool = True,
+    dry_run: bool = False,
 ) -> SyncPlan:
     """Plan a pull sync (source -> metafunctor).
 
@@ -419,6 +438,8 @@ def plan_pull_sync(
         entry: Series entry with source_dir configured
         include_landing: Include landing page in sync
         include_posts: Include posts in sync
+        dry_run: When True, skip the render_command build (it mutates source_dir)
+            and plan against the current, possibly stale, source.
 
     Returns:
         SyncPlan with actions to take
@@ -431,12 +452,13 @@ def plan_pull_sync(
         return plan
 
     if include_posts:
-        run_render_command(entry)
+        run_render_command(entry, dry_run=dry_run)
         source_posts = get_source_posts(entry)
         # A render_command that succeeds but produces no bundles is a build failure,
         # not an instruction to delete every synced post. Abort before the empty
-        # source can drive a mass REMOVE.
-        if entry.render_command and not source_posts:
+        # source can drive a mass REMOVE. On dry_run the build never ran, so an
+        # empty source is not evidence of a failed build; skip the abort.
+        if entry.render_command and not source_posts and not dry_run:
             raise RuntimeError(
                 f"render_command for series '{entry.slug}' produced no posts under "
                 f"{entry.source_dir}/{entry.posts_subdir}; refusing to sync an empty "

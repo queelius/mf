@@ -944,7 +944,9 @@ def sync(
             if push:
                 plan = plan_push_sync(entry, include_landing, include_posts)
             else:
-                plan = plan_pull_sync(entry, include_landing, include_posts)
+                plan = plan_pull_sync(
+                    entry, include_landing, include_posts, dry_run=dry_run
+                )
         except RuntimeError as exc:
             console.print(f"[red]Sync failed for {entry.slug}: {exc}[/red]")
             total_failures += 1
