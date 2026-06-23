@@ -226,8 +226,31 @@ def generate_paper_content(
     if not has_date and not dry_run:
         import datetime
 
-        mtime = paper_dir.stat().st_mtime
-        pinned = datetime.datetime.fromtimestamp(mtime).strftime("%Y-%m-%d")
+        from mf.core.frontmatter import parse_post
+
+        # Reconcile: prefer the date already in the on-disk content page so
+        # that a single 'generate' clears perpetual false drift without changing
+        # reader-visible dates. Only fall back to mtime when no page exists yet.
+        pinned: str | None = None
+        content_page = paths.papers / slug / "index.md"
+        if content_page.exists():
+            try:
+                fm, _ = parse_post(content_page)
+                existing_date = fm.get("date")
+                if existing_date:
+                    if isinstance(existing_date, datetime.datetime):
+                        pinned = existing_date.date().isoformat()
+                    elif isinstance(existing_date, datetime.date):
+                        pinned = existing_date.isoformat()
+                    else:
+                        pinned = str(existing_date)[:10]
+            except Exception:
+                pass
+
+        if not pinned:
+            mtime = paper_dir.stat().st_mtime
+            pinned = datetime.datetime.fromtimestamp(mtime).strftime("%Y-%m-%d")
+
         db.update(slug, date=pinned)
         db.save()
 
