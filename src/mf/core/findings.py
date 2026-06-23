@@ -1,9 +1,14 @@
 """Shared severity vocabulary and summary rendering for diagnostic commands.
 
-Severity-based findings (series audit, integrity check) share this spine so
-they speak one severity language and render summaries identically. The
-status-based render-drift family (core/drift.py: current/stale/missing/orphan)
-is a different axis and is intentionally NOT unified here.
+Severity-based findings share this spine for consistent color rendering.
+`series audit` uses the full spine (SEVERITY_STYLE + severity_summary).
+`integrity check` adopts only SEVERITY_STYLE; it uses its own IssueSeverity
+enum whose WARNING member has value "warning" (not "warn"), so SEVERITY_STYLE
+maps both "warn" and "warning" to yellow so integrity can look up colors
+directly without inline normalization.
+
+The status-based render-drift family (core/drift.py: current/stale/missing/
+orphan) is a different axis and is intentionally NOT unified here.
 """
 
 from __future__ import annotations
@@ -19,6 +24,7 @@ INFO = "info"
 SEVERITY_STYLE: dict[str, str] = {
     "error": "red",
     "warn": "yellow",
+    "warning": "yellow",  # alias for integrity's IssueSeverity.WARNING value
     "info": "blue",
 }
 

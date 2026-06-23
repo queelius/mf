@@ -100,7 +100,7 @@ def generate_publications(
             console.print(f"[yellow]DRY RUN: would {action} {out_file}[/yellow]")
         else:
             out_dir.mkdir(parents=True, exist_ok=True)
-            out_file.write_text(content)
+            out_file.write_text(content, encoding="utf-8")
             action = "Updated" if out_file.exists() else "Created"
             console.print(f"[green]{action}: {out_file}[/green]")
         generated += 1

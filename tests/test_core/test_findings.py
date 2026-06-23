@@ -12,8 +12,14 @@ class _F:
     severity: str
 
 
-def test_severity_style_has_three_levels():
-    assert SEVERITY_STYLE == {"error": "red", "warn": "yellow", "info": "blue"}
+def test_severity_style_has_core_levels():
+    assert SEVERITY_STYLE["error"] == "red"
+    assert SEVERITY_STYLE["warn"] == "yellow"
+    assert SEVERITY_STYLE["info"] == "blue"
+
+
+def test_warning_aliases_warn():
+    assert SEVERITY_STYLE["warning"] == SEVERITY_STYLE["warn"]
 
 
 def test_severity_counts():
