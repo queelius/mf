@@ -857,6 +857,16 @@ class SeriesEntry:
         return value
 
     @property
+    def render_command(self) -> str | None:
+        """Build command run in source_dir before a pull sync (e.g. a notebook render).
+
+        When set, sync runs this command (in source_dir) to materialize the source
+        post bundles before reading them. Lets a notebook-backed series keep its
+        notebooks as the source of truth and generate Hugo bundles on demand.
+        """
+        return self.data.get("render_command")
+
+    @property
     def sync_state(self) -> dict[str, dict[str, str | None]]:
         """Get the sync state tracking hashes for posts.
 

@@ -2,9 +2,10 @@
 
 import json
 import shutil
+import subprocess
 import pytest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from mf.core.database import SeriesDatabase, SeriesEntry
 from mf.series.syncer import (
@@ -23,6 +24,7 @@ from mf.series.syncer import (
     generate_diffstat,
     ConflictResolution,
     strip_date_prefix,
+    run_render_command,
     _detect_renames,
 )
 
@@ -1484,3 +1486,89 @@ class TestExecuteSyncRename:
         )
         assert plan.rename_count == 1
         assert plan.has_changes is True
+
+
+class TestRenderCommand:
+    """Tests for render_command pre-sync hook."""
+
+    # -- SeriesEntry.render_command property --
+
+    def test_render_command_returns_none_when_unset(self):
+        """render_command is None when not in data."""
+        entry = SeriesEntry(slug="test", data={})
+        assert entry.render_command is None
+
+    def test_render_command_returns_string_when_set(self):
+        """render_command returns the configured string."""
+        entry = SeriesEntry(slug="test", data={"render_command": "make render"})
+        assert entry.render_command == "make render"
+
+    # -- run_render_command helper --
+
+    def test_no_op_when_render_command_unset(self):
+        """run_render_command does not call subprocess when render_command is None."""
+        entry = SeriesEntry(slug="test", data={})
+        with patch("mf.series.syncer.subprocess.run") as mock_run:
+            with patch("mf.series.syncer.console"):
+                run_render_command(entry)
+        mock_run.assert_not_called()
+
+    def test_runs_command_with_correct_cwd(self, tmp_path):
+        """run_render_command calls subprocess.run with shell=True and cwd=source_dir."""
+        source_dir = tmp_path / "source_repo"
+        source_dir.mkdir()
+        entry = SeriesEntry(
+            slug="test",
+            data={"source_dir": str(source_dir), "render_command": "make render"},
+        )
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        with patch("mf.series.syncer.subprocess.run", return_value=mock_result) as mock_run:
+            with patch("mf.series.syncer.console"):
+                run_render_command(entry)
+        mock_run.assert_called_once()
+        _, kwargs = mock_run.call_args
+        assert kwargs.get("shell") is True
+        assert kwargs.get("cwd") == entry.source_dir
+
+    def test_raises_runtime_error_on_nonzero_exit(self, tmp_path):
+        """run_render_command raises RuntimeError when the command exits non-zero."""
+        source_dir = tmp_path / "source_repo"
+        source_dir.mkdir()
+        entry = SeriesEntry(
+            slug="my-series",
+            data={"source_dir": str(source_dir), "render_command": "false"},
+        )
+        mock_result = MagicMock()
+        mock_result.returncode = 1
+        mock_result.stderr = "build error occurred"
+        with patch("mf.series.syncer.subprocess.run", return_value=mock_result):
+            with patch("mf.series.syncer.console"):
+                with pytest.raises(RuntimeError, match="render_command failed"):
+                    run_render_command(entry)
+
+    # -- Integration: render_command runs before get_source_posts --
+
+    def test_plan_pull_sync_runs_render_before_reading_posts(self, series_with_source):
+        """A render_command that creates a new post bundle causes plan_pull_sync
+        to see that post as an ADD, proving the command runs before get_source_posts."""
+        db = series_with_source["db"]
+        source_dir = series_with_source["source_dir"]
+        entry = db.get("test-series")
+
+        # Build a shell command that materializes a new post bundle on demand.
+        new_post_dir = source_dir / "post" / "2024-06-01-generated-post"
+        index_md = new_post_dir / "index.md"
+        render_cmd = (
+            f"mkdir -p {new_post_dir} && "
+            f"printf -- '---\\ntitle: Generated Post\\ndate: 2024-06-01\\n"
+            f"series: [\"test-series\"]\\n---\\nGenerated.\\n' > {index_md}"
+        )
+        # Inject the render_command directly into the entry's data dict.
+        entry.data["render_command"] = render_cmd
+
+        with patch("mf.series.syncer.console"):
+            plan = plan_pull_sync(entry)
+
+        generated_slugs = [p.slug for p in plan.posts if p.action == SyncAction.ADD]
+        assert "2024-06-01-generated-post" in generated_slugs

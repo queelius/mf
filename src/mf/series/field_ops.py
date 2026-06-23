@@ -57,6 +57,7 @@ SERIES_SCHEMA: dict[str, FieldDef] = {
     "source_dir": FieldDef(FieldType.STRING, "External source directory path"),
     "posts_subdir": FieldDef(FieldType.STRING, "Subdirectory in source containing posts"),
     "landing_page": FieldDef(FieldType.STRING, "Relative path to landing page in source"),
+    "render_command": FieldDef(FieldType.STRING, "Build command run in source_dir before a pull sync (e.g. a notebook render)"),
 }
 
 

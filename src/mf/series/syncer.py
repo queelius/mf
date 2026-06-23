@@ -10,6 +10,7 @@ from __future__ import annotations
 import difflib
 import re
 import shutil
+import subprocess
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
@@ -381,6 +382,31 @@ def _validate_source_dir(entry: SeriesEntry, plan: SyncPlan) -> Path | None:
     return source_dir
 
 
+def run_render_command(entry: SeriesEntry) -> None:
+    """Run a series render_command in its source_dir to materialize source posts.
+
+    For notebook-backed or otherwise generated series, the posts under posts_subdir
+    are a build artifact produced by this command. It runs before the source is read
+    so sync sees fresh bundles. The command is user-configured local build config
+    (like a Makefile target) and runs via the shell in source_dir. Raises
+    RuntimeError on a non-zero exit so a failed build aborts the sync rather than
+    syncing stale or partial output.
+    """
+    command = entry.render_command
+    if not command:
+        return
+    console.print(f"[dim]running render_command: {command}[/dim]")
+    result = subprocess.run(
+        command, shell=True, cwd=entry.source_dir,
+        capture_output=True, text=True,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"render_command failed (exit {result.returncode}) for series "
+            f"'{entry.slug}':\n{result.stderr.strip()}"
+        )
+
+
 def plan_pull_sync(
     entry: SeriesEntry,
     include_landing: bool = True,
@@ -404,6 +430,7 @@ def plan_pull_sync(
         return plan
 
     if include_posts:
+        run_render_command(entry)
         source_posts = get_source_posts(entry)
         target_posts = get_metafunctor_posts(entry.slug)
         sync_state = entry.sync_state
