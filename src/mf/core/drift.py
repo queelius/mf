@@ -17,6 +17,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
+import yaml
+
 from mf.core.frontmatter import parse_post, parse_text
 
 if TYPE_CHECKING:
@@ -94,10 +96,16 @@ def check_render_drift(renderer: Renderer) -> list[RenderFinding]:
             continue
         if not path.exists():
             findings.append(RenderFinding(slug, "missing", "generate would create"))
-        elif _semantic_equal(rendered, path):
-            findings.append(RenderFinding(slug, "current"))
         else:
-            findings.append(RenderFinding(slug, "stale", "generate would update"))
+            try:
+                equal = _semantic_equal(rendered, path)
+            except (yaml.YAMLError, OSError) as exc:
+                findings.append(RenderFinding(slug, "error", f"could not read on-disk page: {exc}"))
+                continue
+            if equal:
+                findings.append(RenderFinding(slug, "current"))
+            else:
+                findings.append(RenderFinding(slug, "stale", "generate would update"))
 
     for slug in sorted(on_disk - known):
         findings.append(RenderFinding(slug, "orphan", "on disk, unknown to database"))

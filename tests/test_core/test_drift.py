@@ -188,3 +188,30 @@ def test_dry_run_preview_unknown_only_slug_returns_cleanly(tmp_path, capsys):
     print_dry_run_preview(renderer, console=Console(), only_slug="nonexistent")
     out = capsys.readouterr().out
     assert "No matching slug" in out
+
+
+def test_malformed_on_disk_page_reports_error_not_crash(tmp_path):
+    """A broken on-disk YAML frontmatter must yield an error finding, not raise."""
+    # Write a page with unterminated YAML frontmatter.
+    _write_page(tmp_path, "broken", '---\ntitle: "unterminated\n---\n\nbody\n')
+    # Write a valid page that should still classify correctly.
+    _write_page(tmp_path, "valid", '---\ntitle: "good"\n---\n\nv-body\n')
+
+    renderer = FakeRenderer(
+        tmp_path,
+        {
+            # "broken" is known and on disk, so the comparison path is reached.
+            "broken": '---\ntitle: "something"\n---\n\nbody\n',
+            # "valid" matches its on-disk content exactly.
+            "valid": '---\ntitle: "good"\n---\n\nv-body\n',
+        },
+    )
+
+    # Must not raise.
+    findings = check_render_drift(renderer)
+
+    broken_status = _status_for(findings, "broken")
+    assert broken_status == "error", f"expected 'error', got {broken_status!r}"
+
+    valid_status = _status_for(findings, "valid")
+    assert valid_status == "current", f"expected 'current', got {valid_status!r}"
