@@ -79,7 +79,8 @@ def test_projects_diff_cli_reports_missing(mock_site_root):
     assert "missing" in result.output
 
 
-def test_projects_generate_dry_run_says_would_create(mock_site_root):
+def test_projects_generate_dry_run_says_would_write(mock_site_root):
+    """generate --dry-run now delegates to the generator, which prints 'Would write'."""
     from click.testing import CliRunner
 
     from mf.cli import main
@@ -87,7 +88,63 @@ def test_projects_generate_dry_run_says_would_create(mock_site_root):
     _seed(mock_site_root, "proj")
     result = CliRunner().invoke(main, ["--dry-run", "projects", "generate"])
     assert result.exit_code == 0
-    assert "would create" in result.output
+    # The generator's dry-run branch prints "Would write: <path>" (case-sensitive).
+    assert "Would write" in result.output
+
+
+def test_projects_dry_run_reports_hidden_deletion(mock_site_root):
+    """generate --dry-run must report a DELETION for a hidden project that has a content dir.
+
+    Previously the render-drift engine would classify it as 'skip (orphan)' because
+    iter_slugs() excludes hidden projects. The generator's own dry-run correctly
+    prints 'Would delete hidden'.
+    """
+    from pathlib import Path
+
+    from click.testing import CliRunner
+
+    from mf.cli import main
+    from mf.core.config import get_paths
+    from mf.core.database import ProjectsCache, ProjectsDatabase
+
+    slug = "hidden-proj"
+
+    # Seed: project in cache + hidden override in db
+    cache = ProjectsCache()
+    cache.load()
+    cache.set(
+        slug,
+        {
+            "name": slug,
+            "html_url": f"https://github.com/queelius/{slug}",
+            "description": "A hidden project",
+            "created_at": "2023-05-01T00:00:00Z",
+            "stargazers_count": 0,
+            "topics": [],
+            "language": "Python",
+        },
+    )
+    cache.save()
+
+    db = ProjectsDatabase()
+    db.load()
+    db.set(slug, {"hide": True})
+    db.save()
+
+    # Create the content dir that would be deleted on real generate
+    paths = get_paths()
+    content_dir = paths.projects / slug
+    content_dir.mkdir(parents=True, exist_ok=True)
+    (content_dir / "index.md").write_text("---\ntitle: hidden\n---\n", encoding="utf-8")
+
+    result = CliRunner().invoke(main, ["--dry-run", "projects", "generate"])
+    assert result.exit_code == 0
+    output_lower = result.output.lower()
+    # Must report deletion, not skip
+    assert "delete" in output_lower, f"Expected 'delete' in output, got:\n{result.output}"
+    assert "skip (orphan)" not in output_lower, (
+        f"Output must not call it 'skip (orphan)', got:\n{result.output}"
+    )
 
 
 def test_projects_drift_rich_uses_index_branch(mock_site_root):

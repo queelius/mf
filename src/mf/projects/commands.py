@@ -512,12 +512,11 @@ def generate(ctx, slug: str | None, rich_only: bool) -> None:
     dry_run = _get_dry_run(ctx)
 
     if dry_run:
-        from mf.core.drift import print_dry_run_preview
-        from mf.projects.generator import make_renderer
-
-        # NOTE: --rich-only is not forwarded to the dry-run preview; it shows
-        # drift for all non-hidden projects.
-        print_dry_run_preview(make_renderer(), console=console, only_slug=slug)
+        _cache = ProjectsCache()
+        _cache.load()
+        _db = ProjectsDatabase()
+        _db.load()
+        generate_all_projects(_cache, _db, dry_run=True)
         return
 
     db = ProjectsDatabase()
