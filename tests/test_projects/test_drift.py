@@ -163,3 +163,78 @@ def test_projects_drift_rich_uses_index_branch(mock_site_root):
     assert {f.slug: f.status for f in check_render_drift(renderer)}["rich-proj"] == "current"
     # The primary page for a rich project must be _index.md, not index.md.
     assert renderer.hugo_path("rich-proj").name == "_index.md"
+
+
+def test_projects_drift_orphan_for_hidden_project(mock_site_root):
+    """A project page on disk whose slug is hidden in projects_db appears as orphan.
+
+    iter_slugs() excludes hidden projects, but existing_slugs() finds the dir.
+    check_render_drift therefore classifies it as 'orphan, on disk unknown to database'
+    rather than skipping it.
+    """
+    from mf.core.config import get_paths
+    from mf.core.database import ProjectsCache, ProjectsDatabase
+    from mf.projects.generator import ProjectsRenderer, generate_all_projects
+
+    slug = "soon-hidden"
+    _seed(mock_site_root, slug)
+
+    cache = ProjectsCache()
+    cache.load()
+    db = ProjectsDatabase()
+    db.load()
+
+    # First: generate so the content dir exists on disk.
+    generate_all_projects(cache, db, dry_run=False)
+
+    renderer = ProjectsRenderer(cache, db, get_paths())
+    assert {f.slug: f.status for f in check_render_drift(renderer)}[slug] == "current"
+
+    # Now mark the project hidden in projects_db and save.
+    db.set(slug, {"hide": True})
+    db.save()
+
+    # Build a fresh renderer that picks up the updated db.
+    db2 = ProjectsDatabase()
+    db2.load()
+    renderer2 = ProjectsRenderer(cache, db2, get_paths())
+
+    statuses = {f.slug: f.status for f in check_render_drift(renderer2)}
+    # The slug is no longer in iter_slugs() but the dir is in existing_slugs():
+    # drift engine must classify it as 'orphan'.
+    assert statuses.get(slug) == "orphan", (
+        f"expected 'orphan' for hidden project with on-disk page, got {statuses.get(slug)!r}"
+    )
+
+
+def test_projects_drift_stale_after_title_override_change(mock_site_root):
+    """After generate, changing a rendered field causes the page to become stale."""
+    from mf.core.config import get_paths
+    from mf.core.database import ProjectsCache, ProjectsDatabase
+    from mf.projects.generator import ProjectsRenderer, generate_all_projects
+
+    slug = "editable-proj"
+    _seed(mock_site_root, slug)
+
+    cache = ProjectsCache()
+    cache.load()
+    db = ProjectsDatabase()
+    db.load()
+
+    generate_all_projects(cache, db, dry_run=False)
+
+    renderer = ProjectsRenderer(cache, db, get_paths())
+    assert {f.slug: f.status for f in check_render_drift(renderer)}[slug] == "current"
+
+    # Change a field that flows into the rendered frontmatter (title override).
+    db.set(slug, {"title": "A Brand New Title Override"})
+    db.save()
+
+    db2 = ProjectsDatabase()
+    db2.load()
+    renderer2 = ProjectsRenderer(cache, db2, get_paths())
+
+    statuses = {f.slug: f.status for f in check_render_drift(renderer2)}
+    assert statuses.get(slug) == "stale", (
+        f"expected 'stale' after title override change, got {statuses.get(slug)!r}"
+    )

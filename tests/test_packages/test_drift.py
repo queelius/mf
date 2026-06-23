@@ -78,3 +78,30 @@ def test_packages_generate_dry_run_says_would_create(mock_site_root):
     result = CliRunner().invoke(main, ["--dry-run", "packages", "generate"])
     assert result.exit_code == 0
     assert "would create" in result.output
+
+
+def test_packages_drift_stale_after_description_change(mock_site_root):
+    """After generate, updating description in the db makes the page stale."""
+    from mf.core.config import get_paths
+    from mf.packages.database import PackageDatabase
+    from mf.packages.generator import PackagesRenderer, generate_all_packages
+
+    db = _seed(mock_site_root)
+
+    generate_all_packages(db, dry_run=False)
+
+    renderer = PackagesRenderer(db, get_paths())
+    assert {f.slug: f.status for f in check_render_drift(renderer)}["requests"] == "current"
+
+    # Mutate a field that flows into the rendered frontmatter.
+    db.update("requests", description="A new description that changes the page")
+    db.save()
+
+    db2 = PackageDatabase()
+    db2.load()
+    renderer2 = PackagesRenderer(db2, get_paths())
+
+    statuses = {f.slug: f.status for f in check_render_drift(renderer2)}
+    assert statuses.get("requests") == "stale", (
+        f"expected 'stale' after description change, got {statuses.get('requests')!r}"
+    )

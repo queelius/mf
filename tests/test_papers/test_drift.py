@@ -125,6 +125,38 @@ def test_date_pin_reconciles_from_existing_page(mock_site_root):
     )
 
 
+def test_papers_drift_stale_after_title_override_change(mock_site_root):
+    """After generate, changing the title override in paper_db makes the page stale."""
+    from mf.core.config import get_paths
+    from mf.core.database import PaperDatabase
+    from mf.papers.generator import PapersRenderer, generate_paper_content
+
+    slug = "title-override-paper"
+    _seed_latex(mock_site_root, slug)
+
+    db = PaperDatabase()
+    db.load()
+
+    # First generate: pins a date and writes the content page.
+    generate_paper_content(slug, db, use_image_cache=True, dry_run=False)
+
+    renderer = PapersRenderer(db, get_paths())
+    assert {f.slug: f.status for f in check_render_drift(renderer)}[slug] == "current"
+
+    # Mutate the title field that flows directly into the rendered frontmatter.
+    db.update(slug, title="Completely Different Title Override")
+    db.save()
+
+    db2 = PaperDatabase()
+    db2.load()
+    renderer2 = PapersRenderer(db2, get_paths())
+
+    statuses = {f.slug: f.status for f in check_render_drift(renderer2)}
+    assert statuses.get(slug) == "stale", (
+        f"expected 'stale' after title override, got {statuses.get(slug)!r}"
+    )
+
+
 def test_date_pin_is_durable_across_reload(mock_site_root):
     """Date pinned on first generate must survive a full DB reload and not change on second run."""
     from mf.core.config import get_paths

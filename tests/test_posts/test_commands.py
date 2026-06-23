@@ -115,6 +115,42 @@ class TestPostsList:
         assert data[0]["title"] == "Hello World"
         assert data[0]["slug"] == "2024-01-01-hello"
 
+    def test_json_output_description_field(self, runner, create_content_file):
+        """Each item in --json output carries a 'description' key (commit 72fa3e3).
+
+        Posts with a front-matter description emit that value; posts without
+        one emit an empty string rather than a missing key.
+        """
+        create_content_file(
+            slug="2024-03-01-with-desc",
+            title="With Description",
+            extra_fm={"description": "A short summary"},
+        )
+        create_content_file(
+            slug="2024-03-02-no-desc",
+            title="No Description",
+        )
+
+        result = runner.invoke(main, ["posts", "list", "--json", "--include-drafts"])
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        by_slug = {item["slug"]: item for item in data}
+
+        assert "2024-03-01-with-desc" in by_slug, "expected with-desc post in output"
+        assert "2024-03-02-no-desc" in by_slug, "expected no-desc post in output"
+
+        # Both items must carry the 'description' key.
+        assert "description" in by_slug["2024-03-01-with-desc"], (
+            "missing 'description' key for post with front-matter description"
+        )
+        assert "description" in by_slug["2024-03-02-no-desc"], (
+            "missing 'description' key for post without front-matter description"
+        )
+
+        # Value matches front-matter when present, empty string when absent.
+        assert by_slug["2024-03-01-with-desc"]["description"] == "A short summary"
+        assert by_slug["2024-03-02-no-desc"]["description"] == ""
+
     def test_filter_by_query(self, runner, create_content_file):
         create_content_file(
             slug="2024-01-01-crypto",
