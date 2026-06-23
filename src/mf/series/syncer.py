@@ -390,10 +390,11 @@ def run_render_command(entry: SeriesEntry) -> None:
     so sync sees fresh bundles. The command is user-configured local build config
     (like a Makefile target) and runs via the shell in source_dir. Raises
     RuntimeError on a non-zero exit so a failed build aborts the sync rather than
-    syncing stale or partial output.
+    syncing stale or partial output. A no-op when render_command or source_dir is
+    unset.
     """
     command = entry.render_command
-    if not command:
+    if not command or entry.source_dir is None:
         return
     console.print(f"[dim]running render_command: {command}[/dim]")
     result = subprocess.run(
@@ -432,6 +433,15 @@ def plan_pull_sync(
     if include_posts:
         run_render_command(entry)
         source_posts = get_source_posts(entry)
+        # A render_command that succeeds but produces no bundles is a build failure,
+        # not an instruction to delete every synced post. Abort before the empty
+        # source can drive a mass REMOVE.
+        if entry.render_command and not source_posts:
+            raise RuntimeError(
+                f"render_command for series '{entry.slug}' produced no posts under "
+                f"{entry.source_dir}/{entry.posts_subdir}; refusing to sync an empty "
+                f"source (this would remove existing posts)"
+            )
         target_posts = get_metafunctor_posts(entry.slug)
         sync_state = entry.sync_state
 

@@ -938,11 +938,17 @@ def sync(
         console.print(f"[cyan]Series: {entry.slug}[/cyan]")
         console.print(f"[cyan]{'='*60}[/cyan]")
 
-        # Plan the sync
-        if push:
-            plan = plan_push_sync(entry, include_landing, include_posts)
-        else:
-            plan = plan_pull_sync(entry, include_landing, include_posts)
+        # Plan the sync. plan_pull_sync can raise (e.g. a render_command build
+        # failure); catch per-series so one bad series does not crash the batch.
+        try:
+            if push:
+                plan = plan_push_sync(entry, include_landing, include_posts)
+            else:
+                plan = plan_pull_sync(entry, include_landing, include_posts)
+        except RuntimeError as exc:
+            console.print(f"[red]Sync failed for {entry.slug}: {exc}[/red]")
+            total_failures += 1
+            continue
 
         # Print plan
         print_sync_plan(plan, verbose, show_diff=show_diff, summary=summary)

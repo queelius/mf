@@ -1531,6 +1531,15 @@ class TestRenderCommand:
         assert kwargs.get("shell") is True
         assert kwargs.get("cwd") == entry.source_dir
 
+    def test_no_op_when_source_dir_unset(self):
+        """run_render_command does not run anything if source_dir is None, even with
+        a command set (guards against running the build in the wrong directory)."""
+        entry = SeriesEntry(slug="test", data={"render_command": "make render"})
+        with patch("mf.series.syncer.subprocess.run") as mock_run:
+            with patch("mf.series.syncer.console"):
+                run_render_command(entry)
+        mock_run.assert_not_called()
+
     def test_raises_runtime_error_on_nonzero_exit(self, tmp_path):
         """run_render_command raises RuntimeError when the command exits non-zero."""
         source_dir = tmp_path / "source_repo"
@@ -1572,3 +1581,18 @@ class TestRenderCommand:
 
         generated_slugs = [p.slug for p in plan.posts if p.action == SyncAction.ADD]
         assert "2024-06-01-generated-post" in generated_slugs
+
+    def test_empty_render_output_aborts_instead_of_mass_remove(self, series_with_source):
+        """A render_command that succeeds but produces no bundles is a build failure,
+        not an instruction to delete every synced post. plan_pull_sync must raise."""
+        db = series_with_source["db"]
+        source_dir = series_with_source["source_dir"]
+        entry = db.get("test-series")
+
+        # A command that exits 0 but wipes the posts directory (empty source).
+        posts_dir = source_dir / "post"
+        entry.data["render_command"] = f"rm -rf {posts_dir} && mkdir -p {posts_dir}"
+
+        with patch("mf.series.syncer.console"):
+            with pytest.raises(RuntimeError, match="produced no posts"):
+                plan_pull_sync(entry)
